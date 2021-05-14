@@ -26,6 +26,8 @@ package org.graalvm.compiler.hotspot;
 
 import static jdk.vm.ci.hotspot.HotSpotJVMCICompilerFactory.CompilationLevelAdjustment.None;
 
+import java.lang.reflect.Method;
+
 import org.graalvm.compiler.debug.GraalError;
 
 import jdk.vm.ci.hotspot.HotSpotJVMCICompilerFactory;
@@ -57,20 +59,47 @@ class IsGraalPredicate extends IsGraalPredicateBase {
         graalModule = HotSpotGraalCompilerFactory.class.getModule();
     }
 
+    static final Method runtimeExcludeFromJVMCICompilation;
+
+    static {
+        Method excludeFromJVMCICompilation = null;
+        try {
+            excludeFromJVMCICompilation = HotSpotJVMCIRuntime.class.getDeclaredMethod("excludeFromJVMCICompilation", Module[].class);
+        } catch (Exception e) {
+            // excludeFromJVMCICompilation not available
+        }
+        runtimeExcludeFromJVMCICompilation = excludeFromJVMCICompilation;
+    }
+
     @Override
     void onCompilerConfigurationFactorySelection(HotSpotJVMCIRuntime runtime, CompilerConfigurationFactory factory) {
         compilerConfigurationModule = factory.getClass().getModule();
-        runtime.excludeFromJVMCICompilation(jvmciModule, graalModule, compilerConfigurationModule);
+        if (runtimeExcludeFromJVMCICompilation != null) {
+            try {
+                runtimeExcludeFromJVMCICompilation.invoke(HotSpotJVMCIRuntime.runtime(), (Object) new Module[]{jvmciModule, graalModule, compilerConfigurationModule});
+            } catch (Throwable throwable) {
+                throw new InternalError(throwable);
+            }
+        }
     }
 
     @Override
     boolean apply(Class<?> declaringClass) {
-        throw GraalError.shouldNotReachHere();
+        if (runtimeExcludeFromJVMCICompilation != null) {
+            throw GraalError.shouldNotReachHere();
+        } else {
+            Module module = declaringClass.getModule();
+            return jvmciModule == module || graalModule == module || compilerConfigurationModule == module;
+        }
     }
 
     @Override
     HotSpotJVMCICompilerFactory.CompilationLevelAdjustment getCompilationLevelAdjustment() {
-        return None;
+        if (runtimeExcludeFromJVMCICompilation != null) {
+            return None;
+        } else {
+            return super.getCompilationLevelAdjustment();
+        }
     }
 
 }

@@ -58,7 +58,7 @@ public class BciBlockMappingDumpHandler implements DebugDumpHandler {
     private int nextId;
 
     @Override
-    public void dump(DebugContext debug, Object object, String format, Object... arguments) {
+    public void dump(Object object, DebugContext debug, boolean forced, String format, Object... arguments) {
         OptionValues options = debug.getOptions();
         if (object instanceof BciBlockMapping && DebugOptions.PrintGraph.getValue(options) != PrintGraphTarget.Disable) {
             try {
@@ -66,7 +66,7 @@ public class BciBlockMappingDumpHandler implements DebugDumpHandler {
                     structure = new BlockMappingStructure();
                 }
                 int id = nextId++;
-                Builder<BciBlockMapping, BciBlock, ResolvedJavaMethod> builder = GraphOutput.newBuilder(structure).elements(ELEMENTS).types(TYPES).protocolVersion(7, 0);
+                Builder<BciBlockMapping, BciBlock, ResolvedJavaMethod> builder = GraphOutput.newBuilder(structure).elements(ELEMENTS).types(TYPES);
                 GraphOutput<BciBlockMapping, ResolvedJavaMethod> output = debug.buildOutput(builder);
                 Map<Object, Object> properties = new HashMap<>();
                 properties.put("hasJsrBytecodes", ((BciBlockMapping) object).hasJsrBytecodes);

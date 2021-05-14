@@ -29,6 +29,8 @@ import static org.graalvm.compiler.nodeinfo.InputType.Memory;
 import static org.graalvm.compiler.nodeinfo.InputType.State;
 import static org.graalvm.compiler.nodeinfo.NodeCycles.CYCLES_UNKNOWN;
 import static org.graalvm.compiler.nodeinfo.NodeSize.SIZE_UNKNOWN;
+import static org.graalvm.compiler.nodes.Invoke.CYCLES_UNKNOWN_RATIONALE;
+import static org.graalvm.compiler.nodes.Invoke.SIZE_UNKNOWN_RATIONALE;
 
 import java.util.Map;
 
@@ -49,7 +51,12 @@ import jdk.internal.vm.compiler.word.LocationIdentity;
 
 import jdk.vm.ci.code.BytecodeFrame;
 
-@NodeInfo(nameTemplate = "Invoke!#{p#targetMethod/s}", allowedUsageTypes = {Memory}, cycles = CYCLES_UNKNOWN, size = SIZE_UNKNOWN)
+// @formatter:off
+@NodeInfo(nameTemplate = "Invoke!#{p#targetMethod/s}",
+          allowedUsageTypes = {Memory},
+          cycles = CYCLES_UNKNOWN, cyclesRationale = CYCLES_UNKNOWN_RATIONALE,
+          size   = SIZE_UNKNOWN,   sizeRationale   = SIZE_UNKNOWN_RATIONALE)
+// @formatter:on
 public final class InvokeWithExceptionNode extends WithExceptionNode implements Invoke, IterableNodeType, SingleMemoryKill, LIRLowerable, UncheckedInterfaceProvider {
     public static final NodeClass<InvokeWithExceptionNode> TYPE = NodeClass.create(InvokeWithExceptionNode.class);
 
@@ -59,7 +66,7 @@ public final class InvokeWithExceptionNode extends WithExceptionNode implements 
     @OptionalInput(State) FrameState stateAfter;
     protected int bci;
     protected boolean polymorphic;
-    protected boolean useForInlining;
+    protected InlineControl inlineControl;
 
     public InvokeWithExceptionNode(CallTargetNode callTarget, AbstractBeginNode exceptionEdge, int bci) {
         super(TYPE, callTarget.returnStamp().getTrustedStamp());
@@ -67,7 +74,7 @@ public final class InvokeWithExceptionNode extends WithExceptionNode implements 
         this.bci = bci;
         this.callTarget = callTarget;
         this.polymorphic = false;
-        this.useForInlining = true;
+        this.inlineControl = InlineControl.Normal;
     }
 
     @Override
@@ -105,13 +112,13 @@ public final class InvokeWithExceptionNode extends WithExceptionNode implements 
     }
 
     @Override
-    public boolean useForInlining() {
-        return useForInlining;
+    public void setInlineControl(InlineControl control) {
+        this.inlineControl = control;
     }
 
     @Override
-    public void setUseForInlining(boolean value) {
-        this.useForInlining = value;
+    public InlineControl getInlineControl() {
+        return inlineControl;
     }
 
     @Override
@@ -235,6 +242,7 @@ public final class InvokeWithExceptionNode extends WithExceptionNode implements 
         InvokeNode newInvoke = graph().add(new InvokeNode(callTarget, bci, stamp, this.getKilledLocationIdentity()));
         newInvoke.setStateAfter(stateAfter);
         newInvoke.setStateDuring(stateDuring);
+        newInvoke.setInlineControl(inlineControl);
         AbstractBeginNode oldException = this.exceptionEdge;
         graph().replaceSplitWithFixed(this, newInvoke, this.next());
         GraphUtil.killCFG(oldException);

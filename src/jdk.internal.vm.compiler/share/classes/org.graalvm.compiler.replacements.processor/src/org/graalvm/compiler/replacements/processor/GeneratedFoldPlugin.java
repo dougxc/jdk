@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2020, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -169,7 +169,6 @@ public class GeneratedFoldPlugin extends GeneratedPlugin {
         out.printf("        ConstantNode node = ConstantNode.forConstant(constant, %s, %s);\n", deps.use(processor, WellKnownDependency.META_ACCESS),
                         deps.use(processor, WellKnownDependency.STRUCTURED_GRAPH));
         out.printf("        b.push(JavaKind.%s, node);\n", getReturnKind(intrinsicMethod));
-        out.printf("        b.notifyReplacedCall(targetMethod, node);\n");
         out.printf("        return true;\n");
     }
 

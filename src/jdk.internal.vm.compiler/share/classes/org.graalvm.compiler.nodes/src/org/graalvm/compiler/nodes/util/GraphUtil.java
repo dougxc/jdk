@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2020, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -43,13 +43,13 @@ import org.graalvm.compiler.core.common.type.ObjectStamp;
 import org.graalvm.compiler.debug.DebugContext;
 import org.graalvm.compiler.debug.GraalError;
 import org.graalvm.compiler.graph.Graph;
+import org.graalvm.compiler.graph.LinkedNodeStack;
 import org.graalvm.compiler.graph.Node;
 import org.graalvm.compiler.graph.NodeBitMap;
 import org.graalvm.compiler.graph.NodeSourcePosition;
 import org.graalvm.compiler.graph.NodeStack;
 import org.graalvm.compiler.graph.Position;
 import org.graalvm.compiler.graph.iterators.NodeIterable;
-import org.graalvm.compiler.graph.spi.SimplifierTool;
 import org.graalvm.compiler.nodes.AbstractBeginNode;
 import org.graalvm.compiler.nodes.AbstractEndNode;
 import org.graalvm.compiler.nodes.AbstractMergeNode;
@@ -86,6 +86,7 @@ import org.graalvm.compiler.nodes.spi.ArrayLengthProvider.FindLengthMode;
 import org.graalvm.compiler.nodes.spi.CoreProviders;
 import org.graalvm.compiler.nodes.spi.CoreProvidersDelegate;
 import org.graalvm.compiler.nodes.spi.LimitedValueProxy;
+import org.graalvm.compiler.nodes.spi.SimplifierTool;
 import org.graalvm.compiler.nodes.spi.ValueProxy;
 import org.graalvm.compiler.nodes.spi.VirtualizerTool;
 import org.graalvm.compiler.nodes.type.StampTool;
@@ -345,33 +346,44 @@ public class GraphUtil {
     }
 
     public static void killWithUnusedFloatingInputs(Node node, boolean mayKillGuard) {
-        assert checkKill(node, mayKillGuard);
-        node.markDeleted();
-        outer: for (Node in : node.inputs()) {
-            if (in.isAlive()) {
-                in.removeUsage(node);
-                if (in.hasNoUsages()) {
-                    node.maybeNotifyZeroUsages(in);
-                }
-                if (isFloatingNode(in)) {
+        LinkedNodeStack stack = null;
+        Node cur = node;
+        do {
+            assert checkKill(cur, mayKillGuard);
+            cur.markDeleted();
+            outer: for (Node in : cur.inputs()) {
+                if (in.isAlive()) {
+                    in.removeUsage(cur);
                     if (in.hasNoUsages()) {
-                        if (in instanceof GuardNode) {
-                            // Guard nodes are only killed if their anchor dies.
-                        } else {
-                            killWithUnusedFloatingInputs(in);
-                        }
-                    } else if (in instanceof PhiNode) {
-                        for (Node use : in.usages()) {
-                            if (use != in) {
+                        cur.maybeNotifyZeroUsages(in);
+                    }
+                    if (isFloatingNode(in)) {
+                        if (in.hasNoUsages()) {
+                            if (in instanceof GuardNode) {
+                                // Guard nodes are only killed if their anchor dies.
                                 continue outer;
                             }
+                        } else if (in instanceof PhiNode) {
+                            if (!((PhiNode) in).isDegenerated()) {
+                                continue outer;
+                            }
+                            in.replaceAtUsages(null);
+                        } else {
+                            continue outer;
                         }
-                        in.replaceAtUsages(null);
-                        killWithUnusedFloatingInputs(in);
+                        if (stack == null) {
+                            stack = new LinkedNodeStack();
+                        }
+                        stack.push(in);
                     }
                 }
             }
-        }
+            if (stack == null || stack.isEmpty()) {
+                break;
+            } else {
+                cur = stack.pop();
+            }
+        } while (true);
     }
 
     /**
@@ -693,12 +705,12 @@ public class GraphUtil {
         return n;
     }
 
-    public static ValueNode skipPiWhileNonNull(ValueNode node) {
+    public static ValueNode skipPiWhileNonNullArray(ValueNode node) {
         ValueNode n = node;
         while (n instanceof PiNode) {
             PiNode piNode = (PiNode) n;
             ObjectStamp originalStamp = (ObjectStamp) piNode.getOriginalNode().stamp(NodeView.DEFAULT);
-            if (originalStamp.nonNull()) {
+            if (originalStamp.nonNull() && originalStamp.isAlwaysArray()) {
                 n = piNode.getOriginalNode();
             } else {
                 break;
@@ -716,8 +728,13 @@ public class GraphUtil {
      * @return The array length if one was found, or null otherwise.
      */
     public static ValueNode arrayLength(ValueNode value, FindLengthMode mode, ConstantReflectionProvider constantReflection) {
+        return arrayLength(value, mode, constantReflection, null);
+    }
+
+    private static ValueNode arrayLength(ValueNode value, FindLengthMode mode, ConstantReflectionProvider constantReflection, EconomicMap<ValueNode, ValueNode> visitedPhiInputs) {
         Objects.requireNonNull(mode);
 
+        EconomicMap<ValueNode, ValueNode> visitedPhiInputMap = visitedPhiInputs;
         ValueNode current = value;
         do {
             /*
@@ -728,7 +745,10 @@ public class GraphUtil {
                 return ((ArrayLengthProvider) current).findLength(mode, constantReflection);
 
             } else if (current instanceof ValuePhiNode) {
-                return phiArrayLength((ValuePhiNode) current, mode, constantReflection);
+                if (visitedPhiInputMap == null) {
+                    visitedPhiInputMap = EconomicMap.create();
+                }
+                return phiArrayLength((ValuePhiNode) current, mode, constantReflection, visitedPhiInputMap);
 
             } else if (current instanceof ValueProxyNode) {
                 ValueProxyNode proxy = (ValueProxyNode) current;
@@ -748,18 +768,35 @@ public class GraphUtil {
         } while (true);
     }
 
-    private static ValueNode phiArrayLength(ValuePhiNode phi, ArrayLengthProvider.FindLengthMode mode, ConstantReflectionProvider constantReflection) {
+    private static ValueNode phiArrayLength(ValuePhiNode phi, ArrayLengthProvider.FindLengthMode mode, ConstantReflectionProvider constantReflection,
+                    EconomicMap<ValueNode, ValueNode> visitedPhiInputs) {
         if (phi.merge() instanceof LoopBeginNode) {
-            /* Avoid cycle detection by not processing phi functions that could introduce cycles. */
+            /*
+             * Avoid fixed point computation by not processing phi functions that could introduce
+             * cycles.
+             */
             return null;
         }
 
         ValueNode singleLength = null;
         for (int i = 0; i < phi.values().count(); i++) {
             ValueNode input = phi.values().get(i);
-            ValueNode length = arrayLength(input, mode, constantReflection);
-            if (length == null) {
+            if (input == null) {
                 return null;
+            }
+            /*
+             * Multi-way phis can have the same input along many paths. Avoid the exponential blowup
+             * from visiting them many times.
+             */
+            ValueNode length = null;
+            if (visitedPhiInputs.containsKey(input)) {
+                length = visitedPhiInputs.get(input);
+            } else {
+                length = arrayLength(input, mode, constantReflection, visitedPhiInputs);
+                if (length == null) {
+                    return null;
+                }
+                visitedPhiInputs.put(input, length);
             }
             assert length.stamp(NodeView.DEFAULT).getStackKind() == JavaKind.Int;
 
@@ -1010,6 +1047,15 @@ public class GraphUtil {
                 return null;
             }
         }
+
+        @Override
+        public boolean supportsRounding() {
+            if (getLowerer() != null) {
+                return getLowerer().supportsRounding();
+            } else {
+                return false;
+            }
+        }
     }
 
     public static SimplifierTool getDefaultSimplifier(CoreProviders providers, boolean canonicalizeReads, Assumptions assumptions, OptionValues options) {
@@ -1179,7 +1225,7 @@ public class GraphUtil {
      * {@code null} is returned.
      *
      * Note that the diamond representation is not canonical and will be undone by the next
-     * application of {@link LoopEndNode#simplify(SimplifierTool)}.
+     * application of {@link AbstractMergeNode#simplify(SimplifierTool)} to the merge.
      */
     public static LoopEndNode tryToTransformToEmptyLoopDiamond(IfNode ifNode, LoopBeginNode loopBegin) {
         if (ifNode.trueSuccessor().next() instanceof AbstractEndNode && ifNode.falseSuccessor().next() instanceof AbstractEndNode) {
@@ -1199,20 +1245,21 @@ public class GraphUtil {
                 merge.addForwardEnd(newTrueEnd);
                 merge.addForwardEnd(newFalseEnd);
 
-                ArrayList<PhiNode> replacementPhis = new ArrayList<>(loopBegin.phis().count());
+                EconomicMap<PhiNode, PhiNode> replacementPhis = EconomicMap.create(Equivalence.IDENTITY);
                 for (PhiNode phi : loopBegin.phis()) {
                     if (phi instanceof ValuePhiNode) {
                         ValuePhiNode valuePhi = (ValuePhiNode) phi;
                         ValuePhiNode newPhi = phi.graph().unique(new ValuePhiNode(valuePhi.stamp(NodeView.DEFAULT), merge, new ValueNode[]{valuePhi.valueAt(trueEnd), valuePhi.valueAt(falseEnd)}));
-                        replacementPhis.add(newPhi);
+                        replacementPhis.put(phi, newPhi);
                     } else if (phi instanceof MemoryPhiNode) {
                         MemoryPhiNode memoryPhi = (MemoryPhiNode) phi;
                         MemoryPhiNode newPhi = phi.graph().unique(new MemoryPhiNode(merge, memoryPhi.getLocationIdentity(), new ValueNode[]{memoryPhi.valueAt(trueEnd), memoryPhi.valueAt(falseEnd)}));
-                        replacementPhis.add(newPhi);
+                        replacementPhis.put(phi, newPhi);
                     } else {
                         GraalError.shouldNotReachHere();
                     }
                 }
+                assert loopBegin.phis().count() == replacementPhis.size();
 
                 loopBegin.removeEnd(trueEnd);
                 loopBegin.removeEnd(falseEnd);
@@ -1225,7 +1272,7 @@ public class GraphUtil {
                 merge.setNext(newEnd);
                 int i = 0;
                 for (PhiNode phi : loopBegin.phis()) {
-                    ValueNode replacementPhi = replacementPhis.get(i);
+                    ValueNode replacementPhi = replacementPhis.get(phi);
                     assert (phi instanceof ValuePhiNode && replacementPhi instanceof ValuePhiNode) || (phi instanceof MemoryPhiNode && replacementPhi instanceof MemoryPhiNode);
                     phi.addInput(replacementPhi);
                     i++;

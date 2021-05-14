@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2020, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -90,9 +90,6 @@ public class GraalHotSpotVMConfigAccess {
             case "x86_64":
                 arch = "amd64";
                 break;
-            case "sparcv9":
-                arch = "sparc";
-                break;
         }
         osArch = arch;
         assert KNOWN_ARCHITECTURES.contains(arch) : arch;
@@ -114,8 +111,8 @@ public class GraalHotSpotVMConfigAccess {
         return getProperty(name, null);
     }
 
-    public static final Set<String> KNOWN_ARCHITECTURES = new HashSet<>(Arrays.asList("amd64", "sparc", "aarch64"));
-    public static final Set<String> KNOWN_OS_NAMES = new HashSet<>(Arrays.asList("windows", "linux", "darwin", "solaris"));
+    public static final Set<String> KNOWN_ARCHITECTURES = new HashSet<>(Arrays.asList("amd64", "aarch64"));
+    public static final Set<String> KNOWN_OS_NAMES = new HashSet<>(Arrays.asList("windows", "linux", "darwin"));
 
     /**
      * Name for current OS. Will be a value in {@value #KNOWN_OS_NAMES}.
@@ -128,6 +125,8 @@ public class GraalHotSpotVMConfigAccess {
     public final String osArch;
 
     protected static final Version JVMCI_0_55 = new Version2(0, 55);
+    protected static final Version JVMCI_21_1_b02 = new Version3(21, 1, 2);
+    public static final Version JVMCI_20_3_b04 = new Version3(20, 3, 4);
     protected static final Version JVMCI_20_2_b04 = new Version3(20, 2, 4);
     protected static final Version JVMCI_20_2_b01 = new Version3(20, 2, 1);
     protected static final Version JVMCI_20_1_b01 = new Version3(20, 1, 1);
@@ -137,7 +136,7 @@ public class GraalHotSpotVMConfigAccess {
     protected static final Version JVMCI_19_3_b07 = new Version3(19, 3, 7);
 
     public static boolean jvmciGE(Version v) {
-        return !JVMCI_VERSION.isLessThan(v);
+        return JVMCI && !JVMCI_VERSION.isLessThan(v);
     }
 
     public static final int JDK = JavaVersionUtil.JAVA_SPEC;
@@ -231,11 +230,11 @@ public class GraalHotSpotVMConfigAccess {
     }
 
     static void reportError(String rawErrorMessage) {
-        String value = getProperty("JVMCI_CONFIG_CHECK");
+        String value = System.getenv("JVMCI_CONFIG_CHECK");
         Formatter errorMessage = new Formatter().format(rawErrorMessage);
         String javaHome = getProperty("java.home");
         String vmName = getProperty("java.vm.name");
-        errorMessage.format("%nSet the JVMCI_CONFIG_CHECK system property to \"ignore\" to suppress ");
+        errorMessage.format("%nSet the JVMCI_CONFIG_CHECK environment variable to \"ignore\" to suppress ");
         errorMessage.format("this error or to \"warn\" to emit a warning and continue execution.%n");
         errorMessage.format("Currently used Java home directory is %s.%n", javaHome);
         errorMessage.format("Currently used VM configuration is: %s%n", vmName);
@@ -243,7 +242,11 @@ public class GraalHotSpotVMConfigAccess {
             return;
         } else if ("warn".equals(value) || JDK_PRERELEASE) {
             System.err.println(errorMessage.toString());
-        } else {
+        } else if (!JVMCI && Assertions.assertionsEnabled()) {
+            // We cannot control when VM config updates are made in non JVMCI JDKs so
+            // only issue a warning and only when assertions are enabled.
+            System.err.println(errorMessage.toString());
+        } else if (JVMCI) {
             throw new JVMCIError(errorMessage.toString());
         }
     }
@@ -373,7 +376,7 @@ public class GraalHotSpotVMConfigAccess {
     /**
      * @see HotSpotVMConfigAccess#getFlag(String, Class, Object)
      */
-    @SuppressWarnings({"deprecation", "removal"})
+    @SuppressWarnings("deprecation")
     public <T> T getFlag(String name, Class<T> type, T notPresent, boolean expectPresent) {
         if (expectPresent) {
             return getFlag(name, type);

@@ -39,7 +39,7 @@ import org.graalvm.compiler.core.common.type.TypeReference;
 import org.graalvm.compiler.debug.GraalError;
 import org.graalvm.compiler.graph.Node.ConstantNodeParameter;
 import org.graalvm.compiler.graph.Node.NodeIntrinsic;
-import org.graalvm.compiler.graph.spi.CanonicalizerTool;
+import org.graalvm.compiler.nodes.spi.CanonicalizerTool;
 import org.graalvm.compiler.hotspot.GraalHotSpotVMConfig;
 import org.graalvm.compiler.hotspot.nodes.GraalHotSpotVMConfigNode;
 import org.graalvm.compiler.hotspot.word.KlassPointer;
@@ -198,6 +198,7 @@ public class HotSpotReplacementsUtil {
      */
     @Fold
     public static int doingUnsafeAccessOffset(@InjectedParameter GraalHotSpotVMConfig config) {
+        assert config.doingUnsafeAccessOffset != Integer.MAX_VALUE;
         return config.doingUnsafeAccessOffset;
     }
 
@@ -304,8 +305,6 @@ public class HotSpotReplacementsUtil {
      */
     public static final LocationIdentity JAVA_THREAD_THREAD_OBJECT_LOCATION = NamedLocationIdentity.immutable("JavaThread::_threadObj");
 
-    public static final LocationIdentity JAVA_THREAD_THREAD_OBJECT_HANDLE_LOCATION = NamedLocationIdentity.immutable("JavaThread::_threadObj handle");
-
     @Fold
     public static int threadObjectOffset(@InjectedParameter GraalHotSpotVMConfig config) {
         return config.threadObjectOffset;
@@ -362,6 +361,11 @@ public class HotSpotReplacementsUtil {
     @Fold
     public static int jvmAccIsHiddenClass(@InjectedParameter GraalHotSpotVMConfig config) {
         return config.jvmAccIsHiddenClass;
+    }
+
+    @Fold
+    public static int jvmAccHasFinalizer(@InjectedParameter GraalHotSpotVMConfig config) {
+        return config.jvmAccHasFinalizer;
     }
 
     public static final LocationIdentity KLASS_LAYOUT_HELPER_LOCATION = new HotSpotOptimizingLocationIdentity("Klass::_layout_helper") {
@@ -845,7 +849,10 @@ public class HotSpotReplacementsUtil {
 
     public static final LocationIdentity CLASS_MIRROR_LOCATION = NamedLocationIdentity.immutable("Klass::_java_mirror");
 
-    public static final LocationIdentity CLASS_MIRROR_HANDLE_LOCATION = NamedLocationIdentity.immutable("Klass::_java_mirror handle");
+    /**
+     * This represents the contents of OopHandles used for some internal fields.
+     */
+    public static final LocationIdentity HOTSPOT_OOP_HANDLE_LOCATION = NamedLocationIdentity.immutable("OopHandle contents");
 
     @Fold
     public static int layoutHelperHeaderSizeShift(@InjectedParameter GraalHotSpotVMConfig config) {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2020, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -167,11 +167,11 @@ public class ReplacementsImpl implements Replacements, InlineInvokePlugin {
     public Stamp getInjectedStamp(Class<?> type, boolean nonNull) {
         JavaKind kind = JavaKind.fromJavaClass(type);
         if (kind == JavaKind.Object) {
-            ResolvedJavaType returnType = providers.getMetaAccess().lookupJavaType(type);
             WordTypes wordTypes = getProviders().getWordTypes();
-            if (wordTypes.isWord(returnType)) {
-                return wordTypes.getWordStamp(returnType);
+            if (wordTypes.isWord(type)) {
+                return wordTypes.getWordStamp(type);
             } else {
+                ResolvedJavaType returnType = providers.getMetaAccess().lookupJavaType(type);
                 return StampFactory.object(TypeReference.createWithoutAssumptions(returnType), nonNull);
             }
         } else {
@@ -338,9 +338,9 @@ public class ReplacementsImpl implements Replacements, InlineInvokePlugin {
     }
 
     @Override
-    public boolean hasSubstitution(ResolvedJavaMethod method, int invokeBci) {
+    public boolean hasSubstitution(ResolvedJavaMethod method) {
         InvocationPlugin plugin = graphBuilderPlugins.getInvocationPlugins().lookupInvocation(method);
-        return plugin != null && (!plugin.inlineOnly() || invokeBci >= 0);
+        return plugin != null;
     }
 
     @Override
@@ -358,11 +358,15 @@ public class ReplacementsImpl implements Replacements, InlineInvokePlugin {
     }
 
     @Override
-    public StructuredGraph getSubstitution(ResolvedJavaMethod method, int invokeBci, boolean trackNodeSourcePosition, NodeSourcePosition replaceePosition,
+    public StructuredGraph getInlineSubstitution(ResolvedJavaMethod method, int invokeBci, Invoke.InlineControl inlineControl, boolean trackNodeSourcePosition, NodeSourcePosition replaceePosition,
                     AllowAssumptions allowAssumptions, OptionValues options) {
+        assert invokeBci >= 0 : method;
+        if (!inlineControl.allowSubstitution()) {
+            return null;
+        }
         StructuredGraph result;
         InvocationPlugin plugin = graphBuilderPlugins.getInvocationPlugins().lookupInvocation(method);
-        if (plugin != null && (!plugin.inlineOnly() || invokeBci >= 0)) {
+        if (plugin != null) {
             MetaAccessProvider metaAccess = providers.getMetaAccess();
             if (plugin instanceof MethodSubstitutionPlugin) {
                 MethodSubstitutionPlugin msPlugin = (MethodSubstitutionPlugin) plugin;
@@ -396,28 +400,38 @@ public class ReplacementsImpl implements Replacements, InlineInvokePlugin {
     @SuppressWarnings("try")
     @Override
     public StructuredGraph getIntrinsicGraph(ResolvedJavaMethod method, CompilationIdentifier compilationId, DebugContext debug, AllowAssumptions allowAssumptions, Cancellable cancellable) {
-        MethodSubstitutionPlugin msPlugin = getMethodSubstitution(method);
-        if (msPlugin != null) {
-            ResolvedJavaMethod substMethod = msPlugin.getSubstitute(providers.getMetaAccess());
-            assert !substMethod.equals(method);
-            BytecodeProvider bytecodeProvider = msPlugin.getBytecodeProvider();
-            // @formatter:off
-            StructuredGraph graph = new StructuredGraph.Builder(debug.getOptions(), debug, allowAssumptions).
-                    method(substMethod).
-                    compilationId(compilationId).
-                    recordInlinedMethods(bytecodeProvider.shouldRecordMethodDependencies()).
-                    setIsSubstitution(true).
-                    build();
-            // @formatter:on
-            try (DebugContext.Scope scope = debug.scope("GetIntrinsicGraph", graph)) {
+        InvocationPlugin plugin = graphBuilderPlugins.getInvocationPlugins().lookupInvocation(method);
+        if (plugin != null && !plugin.inlineOnly()) {
+            assert !plugin.isDecorator() : "lookupInvocation shouldn't return decorator plugins";
+            if (plugin instanceof MethodSubstitutionPlugin) {
+                MethodSubstitutionPlugin msPlugin = (MethodSubstitutionPlugin) plugin;
+                ResolvedJavaMethod substMethod = msPlugin.getSubstitute(providers.getMetaAccess());
+                assert !substMethod.equals(method);
+                BytecodeProvider bytecodeProvider = msPlugin.getBytecodeProvider();
+                // @formatter:off
+                StructuredGraph graph = new StructuredGraph.Builder(debug.getOptions(), debug, allowAssumptions).
+                        method(substMethod).
+                        compilationId(compilationId).
+                        recordInlinedMethods(bytecodeProvider.shouldRecordMethodDependencies()).
+                        setIsSubstitution(true).
+                        build();
+                // @formatter:on
+                try (DebugContext.Scope scope = debug.scope("GetIntrinsicGraph", graph)) {
+                    Plugins plugins = new Plugins(getGraphBuilderPlugins());
+                    GraphBuilderConfiguration config = GraphBuilderConfiguration.getSnippetDefault(plugins);
+                    IntrinsicContext initialReplacementContext = new IntrinsicContext(method, substMethod, bytecodeProvider, ROOT_COMPILATION);
+                    new GraphBuilderPhase.Instance(providers, config, OptimisticOptimizations.NONE, initialReplacementContext).apply(graph);
+                    assert !graph.isFrozen();
+                    return graph;
+                } catch (Throwable e) {
+                    debug.handle(e);
+                }
+            } else {
+                Bytecode code = new ResolvedJavaMethodBytecode(method);
+                OptionValues options = debug.getOptions();
                 Plugins plugins = new Plugins(getGraphBuilderPlugins());
                 GraphBuilderConfiguration config = GraphBuilderConfiguration.getSnippetDefault(plugins);
-                IntrinsicContext initialReplacementContext = new IntrinsicContext(method, substMethod, bytecodeProvider, ROOT_COMPILATION);
-                new GraphBuilderPhase.Instance(providers, config, OptimisticOptimizations.NONE, initialReplacementContext).apply(graph);
-                assert !graph.isFrozen();
-                return graph;
-            } catch (Throwable e) {
-                debug.handle(e);
+                return new IntrinsicGraphBuilder(options, debug, providers, code, -1, StructuredGraph.AllowAssumptions.YES, config).buildGraph(plugin);
             }
         }
         return null;
@@ -571,8 +585,11 @@ public class ReplacementsImpl implements Replacements, InlineInvokePlugin {
                 if (stateSplit instanceof Invoke) {
                     Invoke invoke = (Invoke) stateSplit;
                     ResolvedJavaMethod method = invoke.callTarget().targetMethod();
+                    if (method == null) {
+                        return false;
+                    }
                     if (method.getAnnotation(Fold.class) != null) {
-                        return true;
+                        throw new GraalError("Fold invokes should no longer exist: " + method + " in " + stateSplit.asNode().graph());
                     }
                     Node.NodeIntrinsic annotation = method.getAnnotation(Node.NodeIntrinsic.class);
                     if (annotation != null && !annotation.hasSideEffect()) {
@@ -605,7 +622,7 @@ public class ReplacementsImpl implements Replacements, InlineInvokePlugin {
             graph.disableUnsafeAccessTracking();
 
             try (DebugContext.Scope s = debug.scope("buildInitialGraph", graph)) {
-                MetaAccessProvider metaAccess = replacements.providers.getMetaAccess();
+                MetaAccessProvider metaAccess = replacements.getProviders().getMetaAccess();
 
                 Plugins plugins = new Plugins(replacements.graphBuilderPlugins);
                 GraphBuilderConfiguration config = GraphBuilderConfiguration.getSnippetDefault(plugins);

@@ -394,14 +394,21 @@ public class GraalHotSpotVMConfig extends GraalHotSpotVMConfigAccess {
     public final int threadIsMethodHandleReturnOffset = getFieldOffset("JavaThread::_is_method_handle_return", Integer.class, "int");
     public final int threadObjectResultOffset = getFieldOffset("JavaThread::_vm_result", Integer.class, "oop");
     public final int jvmciCountersThreadOffset = getFieldOffset("JavaThread::_jvmci_counters", Integer.class, "jlong*");
+    public final int jvmciReserved0Offset = getFieldOffset("JavaThread::_jvmci_reserved0", Integer.class, "intptr_t*", -1, JVMCI ? jvmciGE(JVMCI_21_1_b02) : false);
+
     public final int doingUnsafeAccessOffset = getFieldOffset("JavaThread::_doing_unsafe_access", Integer.class, "bool", Integer.MAX_VALUE, JVMCI || JDK >= 14);
-    public final int javaThreadReservedStackActivationOffset = JDK <= 8 ? 0 : getFieldOffset("JavaThread::_stack_overflow_state._reserved_stack_activation", Integer.class, "address"); // JDK-8046936
+    // @formatter:off
+    public final int javaThreadReservedStackActivationOffset =
+                    JDK <= 8 ? 0 :
+                    JDK <= 15 ? getFieldOffset("JavaThread::_reserved_stack_activation",                       Integer.class, "address"): // JDK-8046936
+                                getFieldOffset("JavaThread::_stack_overflow_state._reserved_stack_activation", Integer.class, "address"); // JDK-8253717
+    // @formatter:on
     public final int jniEnvironmentOffset = getFieldOffset("JavaThread::_jni_environment", Integer.class, "JNIEnv", Integer.MIN_VALUE, JVMCI || JDK >= 14);
 
     public boolean requiresReservedStackCheck(List<ResolvedJavaMethod> methods) {
         if (enableStackReservedZoneAddress != 0 && methods != null) {
             for (ResolvedJavaMethod method : methods) {
-                if (((HotSpotResolvedJavaMethod) method).hasReservedStackAccess()) {
+                if (method instanceof HotSpotResolvedJavaMethod && ((HotSpotResolvedJavaMethod) method).hasReservedStackAccess()) {
                     return true;
                 }
             }
@@ -483,11 +490,6 @@ public class GraalHotSpotVMConfig extends GraalHotSpotVMConfigAccess {
     public int threadLastJavaFpOffset() {
         assert osArch.equals("aarch64") || osArch.equals("amd64");
         return javaThreadAnchorOffset + getFieldOffset("JavaFrameAnchor::_last_Java_fp", Integer.class, "intptr_t*");
-    }
-
-    public int threadJavaFrameAnchorFlagsOffset() {
-        assert osArch.equals("sparc");
-        return javaThreadAnchorOffset + getFieldOffset("JavaFrameAnchor::_flags", Integer.class, "int");
     }
 
     public final int runtimeCallStackSize = getConstant("frame::arg_reg_save_area_bytes", Integer.class, 0, osArch.equals("amd64"));
@@ -661,8 +663,9 @@ public class GraalHotSpotVMConfig extends GraalHotSpotVMConfigAccess {
         } else if (JDK < 16) {
             threadPollingPageOffset = getFieldOffset("Thread::_polling_page", Integer.class, "volatile void*");
         } else {
+            // JDK-8253180
             threadPollingPageOffset = getFieldOffset("Thread::_poll_data", Integer.class, "SafepointMechanism::ThreadData") +
-                                      getFieldOffset("SafepointMechanism::ThreadData::_polling_page", Integer.class, "volatile uintptr_t");
+                            getFieldOffset("SafepointMechanism::ThreadData::_polling_page", Integer.class, "volatile uintptr_t");
         }
     }
 
@@ -723,7 +726,7 @@ public class GraalHotSpotVMConfig extends GraalHotSpotVMConfigAccess {
     // * BS, bits [3:0] indicate log2 of the DC ZVA block size in (4-byte) words.
     // * DZP, bit [4] of indicates whether use of DC ZVA instruction is prohibited.
     public final int psrInfoDczidValue = getFieldValue("VM_Version::_psr_info.dczid_el0", Integer.class, "uint32_t", 0x10,
-                    (JVMCI ? jvmciGE(JVMCI_19_3_b04) : (JDK == 14 || JDK == 15)) && osArch.equals("aarch64"));
+                    osArch.equals("aarch64") && JDK == 11 ? JVMCI && jvmciGE(JVMCI_19_3_b04) : (JDK == 14 || JDK == 15));
 
     public final int zvaLength = getFieldValue("VM_Version::_zva_length", Integer.class, "int", 0, JDK >= 16 && osArch.equals("aarch64"));
 
@@ -814,6 +817,8 @@ public class GraalHotSpotVMConfig extends GraalHotSpotVMConfigAccess {
     public final long newArrayOrNullAddress = getAddress("JVMCIRuntime::new_array_or_null", 0L, JVMCI || JDK >= 12 || (!IS_OPENJDK && JDK == 11 && JDK_UPDATE >= 7));
     public final long newMultiArrayOrNullAddress = getAddress("JVMCIRuntime::new_multi_array_or_null", 0L, JVMCI || JDK >= 12 || (!IS_OPENJDK && JDK == 11 && JDK_UPDATE >= 7));
     public final long dynamicNewInstanceOrNullAddress = getAddress("JVMCIRuntime::dynamic_new_instance_or_null", 0L, JVMCI || JDK >= 12 || (!IS_OPENJDK && JDK == 11 && JDK_UPDATE >= 7));
+
+    public final long invokeJavaMethodAddress = getAddress("JVMCIRuntime::invoke_static_method_one_arg", 0L, JVMCI ? jvmciGE(JVMCI_21_1_b02) : false);
 
     public boolean areNullAllocationStubsAvailable() {
         return newInstanceOrNullAddress != 0L;

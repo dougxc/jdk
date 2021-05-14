@@ -115,7 +115,7 @@ public class PartialEscapeAnalysisTest extends EATestBase {
         testPartialEscapeAnalysis("test3Snippet", 0.5, 1, StoreFieldNode.class, LoadFieldNode.class);
     }
 
-    @SuppressWarnings({"deprecation", "removal"})
+    @SuppressWarnings("deprecation")
     public static Object test3Snippet(int a) {
         if (a < 0) {
             TestObject obj = new TestObject(1, 2);

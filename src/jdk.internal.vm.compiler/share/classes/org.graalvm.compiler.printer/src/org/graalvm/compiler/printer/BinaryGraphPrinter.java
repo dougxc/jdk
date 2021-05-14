@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2020, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -89,7 +89,6 @@ public class BinaryGraphPrinter implements
     public BinaryGraphPrinter(DebugContext ctx, SnippetReflectionProvider snippetReflection) throws IOException {
         // @formatter:off
         this.output = ctx.buildOutput(GraphOutput.newBuilder(this).
-                        protocolVersion(7, 0).
                         blocks(this).
                         elementsAndLocations(this, this).
                         types(this)
@@ -536,6 +535,17 @@ public class BinaryGraphPrinter implements
             public String getLanguage() {
                 return "Java";
             }
+
+            @Override
+            public int getNodeId() {
+                return -1;
+            }
+
+            @Override
+            public String getNodeClassName() {
+                return null;
+            }
+
         }
 
         List<SourceLanguagePosition> arr = new ArrayList<>();

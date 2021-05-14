@@ -26,19 +26,19 @@ package org.graalvm.compiler.nodes;
 
 import static org.graalvm.compiler.nodeinfo.InputType.Association;
 import static org.graalvm.compiler.nodeinfo.NodeCycles.CYCLES_0;
-import static org.graalvm.compiler.nodeinfo.NodeSize.SIZE_0;
+import static org.graalvm.compiler.nodeinfo.NodeSize.SIZE_4;
 
 import org.graalvm.compiler.graph.IterableNodeType;
 import org.graalvm.compiler.graph.Node;
 import org.graalvm.compiler.graph.NodeClass;
 import org.graalvm.compiler.graph.iterators.NodeIterable;
-import org.graalvm.compiler.graph.spi.Simplifiable;
-import org.graalvm.compiler.graph.spi.SimplifierTool;
+import org.graalvm.compiler.nodes.spi.Simplifiable;
+import org.graalvm.compiler.nodes.spi.SimplifierTool;
 import org.graalvm.compiler.nodeinfo.NodeInfo;
 import org.graalvm.compiler.nodes.StructuredGraph.FrameStateVerificationFeature;
 import org.graalvm.compiler.nodes.util.GraphUtil;
 
-@NodeInfo(allowedUsageTypes = {Association}, cycles = CYCLES_0, size = SIZE_0)
+@NodeInfo(allowedUsageTypes = {Association}, cycles = CYCLES_0, size = SIZE_4)
 public final class LoopExitNode extends BeginStateSplitNode implements IterableNodeType, Simplifiable {
 
     public static final NodeClass<LoopExitNode> TYPE = NodeClass.create(LoopExitNode.class);

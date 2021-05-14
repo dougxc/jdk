@@ -25,12 +25,19 @@
 package jdk.internal.vm.compiler.libgraal;
 
 import static jdk.vm.ci.hotspot.HotSpotJVMCIRuntime.runtime;
+import static jdk.internal.vm.compiler.libgraal.LibGraalScope.methodIf;
+import static jdk.internal.vm.compiler.libgraal.LibGraalScope.methodOrNull;
+import static jdk.internal.vm.compiler.libgraal.LibGraalScope.sig;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+
+import jdk.vm.ci.hotspot.HotSpotJVMCIRuntime;
 import jdk.vm.ci.hotspot.HotSpotSpeculationLog;
 import jdk.vm.ci.services.Services;
 
 /**
- * JDK13+ version of {@code LibGraal}.
+ * JDK11+ version of {@code LibGraal}.
  */
 public class LibGraal {
 
@@ -39,12 +46,20 @@ public class LibGraal {
         Services.initializeJVMCI();
     }
 
+    private static final Method unhand = methodOrNull(HotSpotJVMCIRuntime.class, "unhand", sig(Class.class, Long.TYPE));
+    private static final Method translate = methodIf(unhand, HotSpotJVMCIRuntime.class, "translate", sig(Object.class));
+    private static final Method registerNativeMethods = methodIf(unhand, HotSpotJVMCIRuntime.class, "registerNativeMethods", sig(Class.class));
+    private static final Method isCurrentThreadAttached = methodIf(unhand, HotSpotJVMCIRuntime.class, "isCurrentThreadAttached");
+    private static final Method attachCurrentThread = methodIf(unhand, HotSpotJVMCIRuntime.class, "attachCurrentThread", sig(Boolean.TYPE, long[].class), sig(Boolean.TYPE));
+    private static final Method detachCurrentThread = methodIf(unhand, HotSpotJVMCIRuntime.class, "detachCurrentThread", sig(Boolean.TYPE), sig());
+    private static final Method getFailedSpeculationsAddress = methodIf(unhand, HotSpotSpeculationLog.class, "getFailedSpeculationsAddress");
+
     public static boolean isAvailable() {
-        return inLibGraal() || theIsolate != 0L;
+        return inLibGraal() || available;
     }
 
     public static boolean isSupported() {
-        return true;
+        return getFailedSpeculationsAddress != null;
     }
 
     public static boolean inLibGraal() {
@@ -58,57 +73,108 @@ public class LibGraal {
         if (inLibGraal() || !isAvailable()) {
             throw new IllegalStateException();
         }
-        runtime().registerNativeMethods(clazz);
+        try {
+            registerNativeMethods.invoke(runtime(), clazz);
+        } catch (Error e) {
+            throw e;
+        } catch (Throwable throwable) {
+            throw new InternalError(throwable);
+        }
     }
 
     public static long translate(Object obj) {
         if (!isAvailable()) {
             throw new IllegalStateException();
         }
-        if (!inLibGraal() && LibGraalScope.currentScope.get() == null) {
-            throw new IllegalStateException("Not within a " + LibGraalScope.class.getName());
+        try {
+            return (long) translate.invoke(runtime(), obj);
+        } catch (Throwable throwable) {
+            throw new InternalError(throwable);
         }
-        return runtime().translate(obj);
     }
 
+    @SuppressWarnings("unchecked")
     public static <T> T unhand(Class<T> type, long handle) {
         if (!isAvailable()) {
             throw new IllegalStateException();
         }
-        if (!inLibGraal() && LibGraalScope.currentScope.get() == null) {
-            throw new IllegalStateException("Not within a " + LibGraalScope.class.getName());
+        try {
+            return (T) unhand.invoke(runtime(), type, handle);
+        } catch (Throwable throwable) {
+            throw new InternalError(throwable);
         }
-        return runtime().unhand(type, handle);
     }
 
     private static long initializeLibgraal() {
-        try {
-            long[] javaVMInfo = runtime().registerNativeMethods(LibGraalScope.class);
-            return javaVMInfo[1];
-        } catch (UnsupportedOperationException e) {
+        if (registerNativeMethods == null) {
             return 0L;
+        }
+        try {
+            long[] javaVMInfo = (long[]) registerNativeMethods.invoke(runtime(), LibGraalScope.class);
+            long isolate = javaVMInfo[1];
+            return isolate;
+        } catch (InvocationTargetException e) {
+            if (e.getTargetException() instanceof UnsupportedOperationException) {
+                return 0L;
+            }
+            throw new InternalError(e);
+        } catch (Throwable throwable) {
+            throw new InternalError(throwable);
         }
     }
 
-    static final long theIsolate = Services.IS_BUILDING_NATIVE_IMAGE ? 0L : initializeLibgraal();
+    static final long initialIsolate = Services.IS_BUILDING_NATIVE_IMAGE ? 0L : initializeLibgraal();
+    static final boolean available = initialIsolate != 0L;
 
     static boolean isCurrentThreadAttached() {
-        return runtime().isCurrentThreadAttached();
+        try {
+            return (boolean) isCurrentThreadAttached.invoke(runtime());
+        } catch (Throwable throwable) {
+            throw new InternalError(throwable);
+        }
     }
 
     public static boolean attachCurrentThread(boolean isDaemon, long[] isolate) {
-        if (isolate != null) {
-            isolate[0] = LibGraal.theIsolate;
+        try {
+            if (attachCurrentThread.getParameterCount() == 2) {
+                long[] javaVMInfo = isolate != null ? new long[4] : null;
+                boolean res = (boolean) attachCurrentThread.invoke(runtime(), isDaemon, javaVMInfo);
+                if (isolate != null) {
+                    isolate[0] = javaVMInfo[1];
+                }
+                return res;
+            } else {
+                if (isolate != null) {
+                    isolate[0] = initialIsolate;
+                }
+                return (boolean) attachCurrentThread.invoke(runtime(), isDaemon);
+            }
+        } catch (Throwable throwable) {
+            throw new InternalError(throwable);
         }
-        return runtime().attachCurrentThread(isDaemon);
     }
 
     public static boolean detachCurrentThread(boolean release) {
-        runtime().detachCurrentThread();
-        return false;
+        try {
+            if (detachCurrentThread.getParameterCount() == 1) {
+                return (Boolean) detachCurrentThread.invoke(runtime(), release);
+            } else {
+                detachCurrentThread.invoke(runtime());
+                return false;
+            }
+        } catch (Throwable throwable) {
+            throw new InternalError(throwable);
+        }
     }
 
     public static long getFailedSpeculationsAddress(HotSpotSpeculationLog log) {
-        return log.getFailedSpeculationsAddress();
+        if (getFailedSpeculationsAddress != null) {
+            try {
+                return (long) getFailedSpeculationsAddress.invoke(log);
+            } catch (IllegalAccessException | InvocationTargetException e) {
+                e.printStackTrace();
+            }
+        }
+        throw new UnsupportedOperationException();
     }
 }

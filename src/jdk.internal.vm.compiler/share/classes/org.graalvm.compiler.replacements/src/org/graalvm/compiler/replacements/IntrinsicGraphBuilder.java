@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2020, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -26,7 +26,6 @@ package org.graalvm.compiler.replacements;
 
 import org.graalvm.compiler.bytecode.Bytecode;
 import org.graalvm.compiler.bytecode.BytecodeProvider;
-import org.graalvm.compiler.core.common.spi.ConstantFieldProvider;
 import org.graalvm.compiler.core.common.type.Stamp;
 import org.graalvm.compiler.core.common.type.StampFactory;
 import org.graalvm.compiler.core.common.type.StampPair;
@@ -35,7 +34,9 @@ import org.graalvm.compiler.debug.DebugCloseable;
 import org.graalvm.compiler.debug.DebugContext;
 import org.graalvm.compiler.debug.GraalError;
 import org.graalvm.compiler.graph.NodeSourcePosition;
+import org.graalvm.compiler.java.FrameStateBuilder;
 import org.graalvm.compiler.nodes.AbstractBeginNode;
+import org.graalvm.compiler.nodes.BeginNode;
 import org.graalvm.compiler.nodes.CallTargetNode;
 import org.graalvm.compiler.nodes.CallTargetNode.InvokeKind;
 import org.graalvm.compiler.nodes.FixedNode;
@@ -50,22 +51,21 @@ import org.graalvm.compiler.nodes.StructuredGraph.AllowAssumptions;
 import org.graalvm.compiler.nodes.UnwindNode;
 import org.graalvm.compiler.nodes.ValueNode;
 import org.graalvm.compiler.nodes.WithExceptionNode;
+import org.graalvm.compiler.nodes.extended.BytecodeExceptionNode;
+import org.graalvm.compiler.nodes.graphbuilderconf.GraphBuilderConfiguration;
 import org.graalvm.compiler.nodes.graphbuilderconf.GraphBuilderContext;
 import org.graalvm.compiler.nodes.graphbuilderconf.IntrinsicContext;
 import org.graalvm.compiler.nodes.graphbuilderconf.InvocationPlugin;
 import org.graalvm.compiler.nodes.graphbuilderconf.InvocationPlugin.Receiver;
 import org.graalvm.compiler.nodes.java.ExceptionObjectNode;
 import org.graalvm.compiler.nodes.spi.CoreProviders;
-import org.graalvm.compiler.nodes.spi.Replacements;
-import org.graalvm.compiler.nodes.spi.StampProvider;
+import org.graalvm.compiler.nodes.spi.CoreProvidersDelegate;
 import org.graalvm.compiler.options.OptionValues;
 
 import jdk.vm.ci.code.BailoutException;
 import jdk.vm.ci.code.BytecodeFrame;
-import jdk.vm.ci.meta.ConstantReflectionProvider;
 import jdk.vm.ci.meta.JavaKind;
 import jdk.vm.ci.meta.JavaType;
-import jdk.vm.ci.meta.MetaAccessProvider;
 import jdk.vm.ci.meta.ResolvedJavaMethod;
 import jdk.vm.ci.meta.ResolvedJavaType;
 import jdk.vm.ci.meta.Signature;
@@ -74,9 +74,8 @@ import jdk.vm.ci.meta.Signature;
  * Implementation of {@link GraphBuilderContext} used to produce a graph for a method based on an
  * {@link InvocationPlugin} for the method.
  */
-public class IntrinsicGraphBuilder implements GraphBuilderContext, Receiver {
+public class IntrinsicGraphBuilder extends CoreProvidersDelegate implements GraphBuilderContext, Receiver {
 
-    protected final CoreProviders providers;
     protected final StructuredGraph graph;
     protected final Bytecode code;
     protected final ResolvedJavaMethod method;
@@ -85,19 +84,45 @@ public class IntrinsicGraphBuilder implements GraphBuilderContext, Receiver {
     protected ValueNode[] arguments;
     protected ValueNode returnValue;
 
-    private boolean unwindCreated;
-
-    public IntrinsicGraphBuilder(OptionValues options, DebugContext debug, CoreProviders providers, Bytecode code, int invokeBci) {
-        this(options, debug, providers, code, invokeBci, AllowAssumptions.YES);
+    private FrameState createStateAfterStartOfReplacementGraph(ResolvedJavaMethod original, GraphBuilderConfiguration graphBuilderConfig) {
+        FrameStateBuilder startFrameState = new FrameStateBuilder(this, code, graph, graphBuilderConfig.retainLocalVariables());
+        startFrameState.initializeForMethodStart(graph.getAssumptions(), false, graphBuilderConfig.getPlugins());
+        return startFrameState.createInitialIntrinsicFrameState(original);
     }
 
-    protected IntrinsicGraphBuilder(OptionValues options, DebugContext debug, CoreProviders providers, Bytecode code, int invokeBci, AllowAssumptions allowAssumptions) {
-        this.providers = providers;
+    public IntrinsicGraphBuilder(OptionValues options,
+                    DebugContext debug,
+                    CoreProviders providers,
+                    Bytecode code,
+                    int invokeBci) {
+        this(options, debug, providers, code, invokeBci, AllowAssumptions.YES, null);
+    }
+
+    public IntrinsicGraphBuilder(OptionValues options,
+                    DebugContext debug,
+                    CoreProviders providers,
+                    Bytecode code,
+                    int invokeBci,
+                    AllowAssumptions allowAssumptions) {
+        this(options, debug, providers, code, invokeBci, allowAssumptions, null);
+    }
+
+    protected IntrinsicGraphBuilder(OptionValues options,
+                    DebugContext debug,
+                    CoreProviders providers,
+                    Bytecode code,
+                    int invokeBci,
+                    AllowAssumptions allowAssumptions,
+                    GraphBuilderConfiguration graphBuilderConfig) {
+        super(providers);
         this.code = code;
         this.method = code.getMethod();
         this.graph = new StructuredGraph.Builder(options, debug, allowAssumptions).method(method).setIsSubstitution(true).trackNodeSourcePosition(true).build();
         this.invokeBci = invokeBci;
         this.lastInstr = graph.start();
+        if (graphBuilderConfig != null && !method.isNative()) {
+            graph.start().setStateAfter(createStateAfterStartOfReplacementGraph(method, graphBuilderConfig));
+        }
 
         Signature sig = method.getSignature();
         int max = sig.getParameterCount(false);
@@ -148,11 +173,6 @@ public class IntrinsicGraphBuilder implements GraphBuilderContext, Receiver {
                 setExceptionState(exceptionSuccessor);
                 exceptionSuccessor.setNext(graph.add(new UnwindNode(exceptionSuccessor)));
 
-                if (unwindCreated) {
-                    throw GraalError.shouldNotReachHere("Intrinsic graph can only have one node with an exception edge");
-                }
-                unwindCreated = true;
-
                 withExceptionNode.setNext(normalSuccessor);
                 withExceptionNode.setExceptionEdge(exceptionSuccessor);
                 lastInstr = normalSuccessor;
@@ -163,13 +183,34 @@ public class IntrinsicGraphBuilder implements GraphBuilderContext, Receiver {
         }
     }
 
+    @Override
+    public AbstractBeginNode genExplicitExceptionEdge(BytecodeExceptionNode.BytecodeExceptionKind exceptionKind, ValueNode... exceptionArguments) {
+        BytecodeExceptionNode exceptionNode = graph.add(new BytecodeExceptionNode(getMetaAccess(), exceptionKind, exceptionArguments));
+        setExceptionState(exceptionNode);
+        exceptionNode.setNext(graph.add(new UnwindNode(exceptionNode)));
+        return BeginNode.begin(exceptionNode);
+    }
+
     /**
      * Currently unimplemented here, but implemented in subclasses that need it.
      *
      * @param exceptionObject The node that needs an exception state.
      */
-    protected void setExceptionState(ExceptionObjectNode exceptionObject) {
+    protected void setExceptionState(StateSplit exceptionObject) {
         throw GraalError.shouldNotReachHere("unsupported by this IntrinsicGraphBuilder");
+    }
+
+    /**
+     * If the graph contains multiple unwind nodes, then this method merges them into a single
+     * unwind node containing a merged ExceptionNode. This is needed because an IntrinsicGraph can
+     * only contain at most a single UnwindNode.
+     *
+     * Currently unimplemented here, but implemented in subclasses that need it.
+     */
+    protected void mergeUnwinds() {
+        if (getGraph().getNodes().filter(UnwindNode.class).count() > 1) {
+            throw GraalError.shouldNotReachHere("mergeUnwinds unsupported by this IntrinsicGraphBuilder");
+        }
     }
 
     @Override
@@ -210,31 +251,6 @@ public class IntrinsicGraphBuilder implements GraphBuilderContext, Receiver {
     }
 
     @Override
-    public StampProvider getStampProvider() {
-        return providers.getStampProvider();
-    }
-
-    @Override
-    public MetaAccessProvider getMetaAccess() {
-        return providers.getMetaAccess();
-    }
-
-    @Override
-    public ConstantReflectionProvider getConstantReflection() {
-        return providers.getConstantReflection();
-    }
-
-    @Override
-    public ConstantFieldProvider getConstantFieldProvider() {
-        return providers.getConstantFieldProvider();
-    }
-
-    @Override
-    public Replacements getReplacements() {
-        return providers.getReplacements();
-    }
-
-    @Override
     public StructuredGraph getGraph() {
         return graph;
     }
@@ -242,7 +258,7 @@ public class IntrinsicGraphBuilder implements GraphBuilderContext, Receiver {
     @Override
     public void setStateAfter(StateSplit sideEffect) {
         assert sideEffect.hasSideEffect();
-        FrameState stateAfter = getGraph().add(new FrameState(BytecodeFrame.BEFORE_BCI));
+        FrameState stateAfter = getGraph().add(new FrameState(BytecodeFrame.AFTER_BCI));
         sideEffect.setStateAfter(stateAfter);
     }
 
@@ -303,6 +319,9 @@ public class IntrinsicGraphBuilder implements GraphBuilderContext, Receiver {
 
     @SuppressWarnings("try")
     public StructuredGraph buildGraph(InvocationPlugin plugin) {
+        // The caller is expected to have filtered out decorator plugins since they cannot be
+        // processed without special handling.
+        assert !plugin.isDecorator() : plugin;
         NodeSourcePosition position = graph.trackNodeSourcePosition() ? NodeSourcePosition.placeholder(method) : null;
         try (DebugCloseable context = graph.withNodeSourcePosition(position)) {
             Receiver receiver = method.isStatic() ? null : this;
@@ -310,6 +329,7 @@ public class IntrinsicGraphBuilder implements GraphBuilderContext, Receiver {
                 assert (returnValue != null) == (method.getSignature().getReturnKind() != JavaKind.Void) : method;
                 assert lastInstr != null : "ReturnNode must be linked into control flow";
                 append(new ReturnNode(returnValue));
+                mergeUnwinds();
                 return graph;
             }
             return null;
@@ -318,12 +338,12 @@ public class IntrinsicGraphBuilder implements GraphBuilderContext, Receiver {
 
     @Override
     public boolean intrinsify(BytecodeProvider bytecodeProvider, ResolvedJavaMethod targetMethod, ResolvedJavaMethod substitute, InvocationPlugin.Receiver receiver, ValueNode[] args) {
-        throw GraalError.shouldNotReachHere();
+        return false;
     }
 
     @Override
     public boolean intrinsify(ResolvedJavaMethod targetMethod, StructuredGraph substituteGraph, Receiver receiver, ValueNode[] argsIncludingReceiver) {
-        throw GraalError.shouldNotReachHere();
+        return false;
     }
 
     @Override

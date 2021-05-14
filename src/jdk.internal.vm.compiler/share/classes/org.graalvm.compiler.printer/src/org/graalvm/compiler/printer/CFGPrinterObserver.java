@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2020, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -24,6 +24,7 @@
 
 package org.graalvm.compiler.printer;
 
+import static org.graalvm.compiler.debug.DebugOptions.PrintBackendCFG;
 import static org.graalvm.compiler.debug.DebugOptions.PrintCFG;
 
 import java.io.BufferedOutputStream;
@@ -79,10 +80,10 @@ public class CFGPrinterObserver implements DebugDumpHandler {
     private List<String> curDecorators = Collections.emptyList();
 
     @Override
-    public void dump(DebugContext debug, Object object, String format, Object... arguments) {
+    public void dump(Object object, DebugContext debug, boolean forced, String format, Object... arguments) {
         String message = String.format(format, arguments);
         try {
-            dumpSandboxed(debug, object, message);
+            dumpSandboxed(debug, object, forced, message);
         } catch (Throwable ex) {
             TTY.println("CFGPrinter: Exception during output of " + message + ": " + ex);
             ex.printStackTrace();
@@ -146,13 +147,22 @@ public class CFGPrinterObserver implements DebugDumpHandler {
     private LIR lastLIR = null;
     private IntervalDumper delayedIntervals = null;
 
+    public void dumpSandboxed(DebugContext debug, Object object, boolean forced, String message) {
+        OptionValues options = debug.getOptions();
+        if (isFrontendObject(object)) {
+            if (!PrintCFG.getValue(options) && !forced) {
+                return;
+            }
+        } else {
+            if (!PrintBackendCFG.getValue(options) && !forced) {
+                return;
+            }
+        }
+        dumpSandboxed(debug, object, message);
+    }
+
     public void dumpSandboxed(DebugContext debug, Object object, String message) {
         OptionValues options = debug.getOptions();
-        boolean dumpFrontend = PrintCFG.getValue(options);
-        if (!dumpFrontend && isFrontendObject(object)) {
-            return;
-        }
-
         if (cfgPrinter == null) {
             try {
                 Path dumpFile = debug.getDumpPath(".cfg", false);
@@ -193,11 +203,12 @@ public class CFGPrinterObserver implements DebugDumpHandler {
 
             if (object instanceof BciBlockMapping) {
                 BciBlockMapping blockMap = (BciBlockMapping) object;
-                cfgPrinter.printCFG(message, blockMap);
-                if (blockMap.code.getCode() != null) {
-                    cfgPrinter.printBytecodes(new BytecodeDisassembler(false).disassemble(blockMap.code));
+                if (blockMap.getBlocks() != null) {
+                    cfgPrinter.printCFG(message, blockMap);
+                    if (blockMap.code.getCode() != null) {
+                        cfgPrinter.printBytecodes(new BytecodeDisassembler(false).disassemble(blockMap.code));
+                    }
                 }
-
             } else if (object instanceof LIR) {
                 // Currently no node printing for lir
                 cfgPrinter.printCFG(message, cfgPrinter.lir.codeEmittingOrder(), false);
@@ -224,11 +235,11 @@ public class CFGPrinterObserver implements DebugDumpHandler {
                 }
             } else if (object instanceof CompilationResult) {
                 final CompilationResult compResult = (CompilationResult) object;
-                cfgPrinter.printMachineCode(disassemble(codeCache, compResult, null), message);
+                cfgPrinter.printMachineCode(disassemble(options, codeCache, compResult, null), message);
             } else if (object instanceof InstalledCode) {
                 CompilationResult compResult = debug.contextLookup(CompilationResult.class);
                 if (compResult != null) {
-                    cfgPrinter.printMachineCode(disassemble(codeCache, compResult, (InstalledCode) object), message);
+                    cfgPrinter.printMachineCode(disassemble(options, codeCache, compResult, (InstalledCode) object), message);
                 }
             } else if (object instanceof IntervalDumper) {
                 if (lastLIR == cfgPrinter.lir) {
@@ -256,45 +267,38 @@ public class CFGPrinterObserver implements DebugDumpHandler {
         }
     }
 
-    /** Lazy initialization to delay service lookup until disassembler is actually needed. */
-    static class DisassemblerHolder {
-        private static final DisassemblerProvider disassembler;
-
-        static {
-            DisassemblerProvider selected = null;
-            String arch = Services.getSavedProperties().get("os.arch");
-            for (DisassemblerProvider d : GraalServices.load(DisassemblerProvider.class)) {
-                String name = d.getName().toLowerCase();
-                if (arch.equals("aarch64")) {
-                    if (name.contains("hsdis-objdump")) {
-                        selected = d;
-                        break;
-                    }
-                } else {
-                    if (name.contains("hcf") || name.contains("hexcodefile")) {
-                        selected = d;
-                        break;
-                    }
+    private static DisassemblerProvider selectDisassemblerProvider(OptionValues options) {
+        DisassemblerProvider selected = null;
+        String arch = Services.getSavedProperties().get("os.arch");
+        final boolean isAArch64 = arch.equals("aarch64");
+        for (DisassemblerProvider d : GraalServices.load(DisassemblerProvider.class)) {
+            String name = d.getName();
+            if (isAArch64 && name.equals("objdump") && d.isAvailable(options)) {
+                return d;
+            } else if (name.equals("hcf")) {
+                if (!isAArch64) {
+                    return d;
                 }
+                selected = d;
             }
-            if (selected == null) {
-                selected = new DisassemblerProvider() {
-                    @Override
-                    public String getName() {
-                        return "nop";
-                    }
-                };
-            }
-            disassembler = selected;
         }
+        if (selected == null) {
+            selected = new DisassemblerProvider() {
+                @Override
+                public String getName() {
+                    return "nop";
+                }
+            };
+        }
+        return selected;
     }
 
-    private static String disassemble(CodeCacheProvider codeCache, CompilationResult compResult, InstalledCode installedCode) {
-        DisassemblerProvider dis = DisassemblerHolder.disassembler;
+    private static String disassemble(OptionValues options, CodeCacheProvider codeCache, CompilationResult compResult, InstalledCode installedCode) {
+        DisassemblerProvider dis = selectDisassemblerProvider(options);
         if (installedCode != null) {
             return dis.disassembleInstalledCode(codeCache, compResult, installedCode);
         }
-        return dis.disassembleCompiledCode(codeCache, compResult);
+        return dis.disassembleCompiledCode(options, codeCache, compResult);
     }
 
     @Override

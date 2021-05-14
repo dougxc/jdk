@@ -36,6 +36,8 @@ import static org.graalvm.compiler.nodeinfo.NodeSize.SIZE_2;
 import static org.graalvm.compiler.nodeinfo.NodeSize.SIZE_64;
 import static org.graalvm.compiler.nodeinfo.NodeSize.SIZE_8;
 import static org.graalvm.compiler.nodeinfo.NodeSize.SIZE_UNKNOWN;
+import static org.graalvm.compiler.nodes.Invoke.CYCLES_UNKNOWN_RATIONALE;
+import static org.graalvm.compiler.nodes.Invoke.SIZE_UNKNOWN_RATIONALE;
 
 import java.util.Map;
 
@@ -64,12 +66,8 @@ import jdk.vm.ci.meta.JavaKind;
 // @formatter:off
 @NodeInfo(nameTemplate = "Invoke#{p#targetMethod/s}",
           allowedUsageTypes = {Memory},
-          cycles = CYCLES_UNKNOWN,
-          cyclesRationale = "We cannot estimate the runtime cost of a call, it is a blackhole." +
-                            "However, we can estimate, dynamically, the cost of the call operation itself based on the type of the call.",
-          size = SIZE_UNKNOWN,
-          sizeRationale = "We can only dynamically, based on the type of the call (special, static, virtual, interface) decide" +
-                          "how much code is generated for the call.")
+          cycles = CYCLES_UNKNOWN, cyclesRationale = CYCLES_UNKNOWN_RATIONALE,
+          size   = SIZE_UNKNOWN,   sizeRationale   = SIZE_UNKNOWN_RATIONALE)
 // @formatter:on
 public final class InvokeNode extends AbstractMemoryCheckpoint implements Invoke, LIRLowerable, SingleMemoryKill, UncheckedInterfaceProvider {
     public static final NodeClass<InvokeNode> TYPE = NodeClass.create(InvokeNode.class);
@@ -79,7 +77,7 @@ public final class InvokeNode extends AbstractMemoryCheckpoint implements Invoke
     @OptionalInput(State) FrameState stateDuring;
     protected int bci;
     protected boolean polymorphic;
-    protected boolean useForInlining;
+    protected InlineControl inlineControl;
     protected final LocationIdentity identity;
 
     public InvokeNode(CallTargetNode callTarget, int bci) {
@@ -99,7 +97,7 @@ public final class InvokeNode extends AbstractMemoryCheckpoint implements Invoke
         this.callTarget = callTarget;
         this.bci = bci;
         this.polymorphic = false;
-        this.useForInlining = true;
+        this.inlineControl = InlineControl.Normal;
         this.identity = identity;
     }
 
@@ -108,7 +106,7 @@ public final class InvokeNode extends AbstractMemoryCheckpoint implements Invoke
         this.callTarget = invoke.callTarget;
         this.bci = invoke.bci;
         this.polymorphic = invoke.polymorphic;
-        this.useForInlining = invoke.useForInlining;
+        this.inlineControl = invoke.inlineControl;
         this.identity = invoke.getKilledLocationIdentity();
     }
 
@@ -143,13 +141,13 @@ public final class InvokeNode extends AbstractMemoryCheckpoint implements Invoke
     }
 
     @Override
-    public boolean useForInlining() {
-        return useForInlining;
+    public void setInlineControl(InlineControl control) {
+        this.inlineControl = control;
     }
 
     @Override
-    public void setUseForInlining(boolean value) {
-        this.useForInlining = value;
+    public InlineControl getInlineControl() {
+        return inlineControl;
     }
 
     @Override

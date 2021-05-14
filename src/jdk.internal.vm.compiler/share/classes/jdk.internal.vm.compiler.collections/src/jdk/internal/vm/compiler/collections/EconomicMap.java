@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2020, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -40,7 +40,6 @@
 
 package jdk.internal.vm.compiler.collections;
 
-import java.util.Iterator;
 import java.util.Map;
 import java.util.function.BiFunction;
 
@@ -80,6 +79,28 @@ public interface EconomicMap<K, V> extends UnmodifiableEconomicMap<K, V> {
      * @since 19.0
      */
     V put(K key, V value);
+
+    /**
+     * If the specified key is not already associated with a value (or is mapped to {@code null})
+     * associates it with the given value and returns {@code null}, else returns the current value.
+     *
+     * @param key key with which the specified value is to be associated
+     * @param value value to be associated with the specified key
+     *
+     * @return the previous value associated with the specified key, or {@code null} if there was no
+     *         mapping for the key. (A {@code null} return can also indicate that the map previously
+     *         associated {@code null} with the key, if the implementation supports null values.)
+     *
+     * @since 20.2
+     */
+    default V putIfAbsent(K key, V value) {
+        V v = get(key);
+        if (v == null) {
+            v = put(key, value);
+        }
+
+        return v;
+    }
 
     /**
      * Copies all of the mappings from {@code other} to this map.
@@ -207,95 +228,6 @@ public interface EconomicMap<K, V> extends UnmodifiableEconomicMap<K, V> {
      * @since 19.0
      */
     static <K, V> EconomicMap<K, V> wrapMap(Map<K, V> map) {
-        return new EconomicMap<K, V>() {
-
-            @Override
-            public V get(K key) {
-                V result = map.get(key);
-                return result;
-            }
-
-            @Override
-            public V put(K key, V value) {
-                V result = map.put(key, value);
-                return result;
-            }
-
-            @Override
-            public int size() {
-                int result = map.size();
-                return result;
-            }
-
-            @Override
-            public boolean containsKey(K key) {
-                return map.containsKey(key);
-            }
-
-            @Override
-            public void clear() {
-                map.clear();
-            }
-
-            @Override
-            public V removeKey(K key) {
-                V result = map.remove(key);
-                return result;
-            }
-
-            @Override
-            public Iterable<V> getValues() {
-                return map.values();
-            }
-
-            @Override
-            public Iterable<K> getKeys() {
-                return map.keySet();
-            }
-
-            @Override
-            public boolean isEmpty() {
-                return map.isEmpty();
-            }
-
-            @Override
-            public MapCursor<K, V> getEntries() {
-                Iterator<java.util.Map.Entry<K, V>> iterator = map.entrySet().iterator();
-                return new MapCursor<K, V>() {
-
-                    private Map.Entry<K, V> current;
-
-                    @Override
-                    public boolean advance() {
-                        boolean result = iterator.hasNext();
-                        if (result) {
-                            current = iterator.next();
-                        }
-
-                        return result;
-                    }
-
-                    @Override
-                    public K getKey() {
-                        return current.getKey();
-                    }
-
-                    @Override
-                    public V getValue() {
-                        return current.getValue();
-                    }
-
-                    @Override
-                    public void remove() {
-                        iterator.remove();
-                    }
-                };
-            }
-
-            @Override
-            public void replaceAll(BiFunction<? super K, ? super V, ? extends V> function) {
-                map.replaceAll(function);
-            }
-        };
+        return new EconomicMapWrap<>(map);
     }
 }

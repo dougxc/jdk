@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2020, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -33,11 +33,13 @@ import java.util.List;
 import org.graalvm.compiler.core.common.type.Stamp;
 import org.graalvm.compiler.debug.Assertions;
 import org.graalvm.compiler.debug.DebugCloseable;
+import org.graalvm.compiler.debug.DebugContext;
+import org.graalvm.compiler.debug.TimerKey;
 import org.graalvm.compiler.graph.Edges;
 import org.graalvm.compiler.graph.Node;
 import org.graalvm.compiler.graph.NodeClass;
-import org.graalvm.compiler.graph.spi.Canonicalizable;
-import org.graalvm.compiler.graph.spi.CanonicalizerTool;
+import org.graalvm.compiler.nodes.spi.Canonicalizable;
+import org.graalvm.compiler.nodes.spi.CanonicalizerTool;
 import org.graalvm.compiler.nodeinfo.InputType;
 import org.graalvm.compiler.nodeinfo.NodeInfo;
 import org.graalvm.compiler.nodes.calc.FloatingNode;
@@ -62,6 +64,8 @@ import jdk.vm.ci.meta.Assumptions;
  * with constant conditions are simplified.
  */
 public class SimplifyingGraphDecoder extends GraphDecoder {
+
+    private static final TimerKey CanonicalizeFixedNode = DebugContext.timer("PartialEvaluation-CanonicalizeFixedNode").doc("Time spent in simplifying fixed nodes.");
 
     protected final CoreProviders providers;
     protected final boolean canonicalizeReads;
@@ -104,6 +108,12 @@ public class SimplifyingGraphDecoder extends GraphDecoder {
             // there will be more opportunities for this optimization later
             return null;
         }
+
+        @Override
+        public boolean supportsRounding() {
+            return getLowerer().supportsRounding();
+        }
+
     }
 
     @NodeInfo(cycles = CYCLES_IGNORED, size = SIZE_IGNORED, allowedUsageTypes = {Guard, InputType.Anchor})
@@ -171,11 +181,14 @@ public class SimplifyingGraphDecoder extends GraphDecoder {
         }
     }
 
+    @SuppressWarnings({"unused", "try"})
     @Override
     protected void handleFixedNode(MethodScope methodScope, LoopScope loopScope, int nodeOrderId, FixedNode node) {
-        Node canonical = canonicalizeFixedNode(methodScope, node);
-        if (canonical != node) {
-            handleCanonicalization(loopScope, nodeOrderId, node, canonical);
+        try (DebugCloseable a = CanonicalizeFixedNode.start(debug)) {
+            Node canonical = canonicalizeFixedNode(methodScope, node);
+            if (canonical != node) {
+                handleCanonicalization(loopScope, nodeOrderId, node, canonical);
+            }
         }
     }
 

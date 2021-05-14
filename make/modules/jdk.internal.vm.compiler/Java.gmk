@@ -38,6 +38,10 @@ JAVAC_FLAGS += -parameters -XDstringConcat=inline \
     #
 
 EXCLUDES += \
+    com.oracle.svm.configure.test \
+    com.oracle.svm.graal.test \
+    com.oracle.svm.test \
+    com.oracle.svm.test.jdk11 \
     jdk.internal.vm.compiler.collections.test \
     org.graalvm.compiler.api.directives.test \
     org.graalvm.compiler.api.test \

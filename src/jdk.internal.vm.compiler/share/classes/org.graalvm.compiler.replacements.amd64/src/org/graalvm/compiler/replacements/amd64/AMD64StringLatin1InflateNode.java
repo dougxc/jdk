@@ -46,8 +46,7 @@ import jdk.internal.vm.compiler.word.Pointer;
 
 import jdk.vm.ci.meta.JavaKind;
 
-@NodeInfo(allowedUsageTypes = Memory, size = SIZE_512, cycles = CYCLES_UNKNOWN)
-
+@NodeInfo(allowedUsageTypes = Memory, size = SIZE_512, cycles = CYCLES_UNKNOWN, cyclesRationale = "depends on length")
 public final class AMD64StringLatin1InflateNode extends FixedWithNextNode
                 implements LIRLowerable, MultiMemoryKill, MemoryAccess {
 

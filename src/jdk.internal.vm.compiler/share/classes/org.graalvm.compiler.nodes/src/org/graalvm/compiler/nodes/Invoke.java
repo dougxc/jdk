@@ -36,6 +36,31 @@ import jdk.vm.ci.meta.ResolvedJavaType;
 
 public interface Invoke extends StateSplit, Lowerable, SingleMemoryKill, DeoptimizingNode.DeoptDuring, FixedNodeInterface, Invokable {
 
+    String CYCLES_UNKNOWN_RATIONALE = "Cannot estimate the runtime cost of a call; it's a blackhole.";
+    String SIZE_UNKNOWN_RATIONALE = "Can only dynamically decide how much code is generated based on the type of a call (special, static, virtual, interface).";
+
+    enum InlineControl {
+        Normal(true, true),
+        BytecodesOnly(true, false),
+        Never(false, false);
+
+        private final boolean allowInlining;
+        private final boolean allowSubstitution;
+
+        InlineControl(boolean allowInlining, boolean allowSubstitution) {
+            this.allowInlining = allowInlining;
+            this.allowSubstitution = allowSubstitution;
+        }
+
+        public boolean allowInlining() {
+            return allowInlining;
+        }
+
+        public boolean allowSubstitution() {
+            return allowSubstitution;
+        }
+    }
+
     FixedNode next();
 
     void setNext(FixedNode x);
@@ -48,9 +73,17 @@ public interface Invoke extends StateSplit, Lowerable, SingleMemoryKill, Deoptim
 
     void setClassInit(ValueNode node);
 
-    boolean useForInlining();
+    InlineControl getInlineControl();
 
-    void setUseForInlining(boolean value);
+    void setInlineControl(InlineControl control);
+
+    default boolean useForInlining() {
+        return getInlineControl().allowInlining();
+    }
+
+    default void setUseForInlining(boolean useForInlining) {
+        setInlineControl(useForInlining ? Invoke.InlineControl.Normal : Invoke.InlineControl.Never);
+    }
 
     /**
      * True if this invocation is almost certainly polymorphic, false when in doubt.

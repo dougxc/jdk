@@ -32,7 +32,7 @@ import org.graalvm.compiler.jtt.JTTTest;
  */
 public class HP_allocate02 extends JTTTest {
 
-    @SuppressWarnings({"deprecation", "removal", "unused"})
+    @SuppressWarnings({"deprecation", "unused"})
     public static int test(int count) {
         int sum = 0;
         for (int i = 0; i < count; i++) {

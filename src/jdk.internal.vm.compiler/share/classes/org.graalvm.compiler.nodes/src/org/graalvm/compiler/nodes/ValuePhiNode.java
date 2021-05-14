@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2009, 2021, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -106,5 +106,10 @@ public class ValuePhiNode extends PhiNode {
         Map<Object, Object> properties = super.getDebugProperties(map);
         properties.put("valueDescription", valueDescription());
         return properties;
+    }
+
+    @Override
+    public PhiNode duplicateOn(AbstractMergeNode newMerge) {
+        return graph().addWithoutUnique(new ValuePhiNode(stamp(NodeView.DEFAULT), newMerge));
     }
 }
