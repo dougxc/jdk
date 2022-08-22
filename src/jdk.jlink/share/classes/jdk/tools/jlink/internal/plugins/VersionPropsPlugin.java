@@ -25,8 +25,12 @@
 
 package jdk.tools.jlink.internal.plugins;
 
+import java.util.EnumSet;
 import java.util.Map;
+import java.util.Set;
 
+import jdk.internal.access.JavaLangAccess;
+import jdk.internal.access.SharedSecrets;
 import jdk.internal.org.objectweb.asm.ClassReader;
 import jdk.internal.org.objectweb.asm.ClassVisitor;
 import jdk.internal.org.objectweb.asm.ClassWriter;
@@ -46,11 +50,19 @@ import jdk.tools.jlink.plugin.ResourcePoolEntry;
  */
 abstract class VersionPropsPlugin extends AbstractPlugin {
 
+    private static final JavaLangAccess JLA
+        = SharedSecrets.getJavaLangAccess();
+
     private static final String VERSION_PROPS_CLASS
         = "/java.base/java/lang/VersionProps.class";
 
     private final String field;
     private String value;
+
+    /**
+     * Value of the java.lang.VersionProps field in the current Java runtime.
+     */
+    protected final String jrtValue;
 
     /**
      * @param field The name of the java.lang.VersionProps field to be redefined
@@ -59,6 +71,7 @@ abstract class VersionPropsPlugin extends AbstractPlugin {
     protected VersionPropsPlugin(String field, String option) {
         super(option);
         this.field = field;
+        this.jrtValue = getJRTValue();
     }
 
     /**
@@ -77,6 +90,15 @@ abstract class VersionPropsPlugin extends AbstractPlugin {
     }
 
     @Override
+    public Set<State> getState() {
+        if (jrtValue.isEmpty()) {
+            return super.getState();
+        }
+        // Auto-enable if the props field has a non-empty value in the current Java runtime.
+        return EnumSet.of(State.AUTO_ENABLED, State.FUNCTIONAL);
+    }
+
+    @Override
     public boolean hasArguments() {
         return true;
     }
@@ -86,9 +108,18 @@ abstract class VersionPropsPlugin extends AbstractPlugin {
         return true;
     }
 
+    /**
+     * Gets the value of the props field in the current Java runtime.
+     */
+    private String getJRTValue() {
+        return JLA.getVendorPropertyFieldValue(field);
+    }
+
     @Override
     public void configure(Map<String, String> config) {
         var v = config.get(getName());
+        if (v == null && !jrtValue.isEmpty())
+            v = jrtValue;
         if (v == null)
             throw new AssertionError();
         value = v;

@@ -79,18 +79,21 @@ class VersionProps {
         "@@VENDOR_URL@@";
 
     // The remaining VENDOR_* fields must not be final,
-    // so that they can be redefined by jlink plugins
+    // so that they can be redefined by jlink plugins.
+    // They must also not be private so that they can
+    // be read by JavaLangAccess.
 
-    // This field is read by HotSpot
-    private static String VENDOR_VERSION =
+    // This field is read by HotSpot and JavaLangAccess.
+    static String VENDOR_VERSION =
         "@@VENDOR_VERSION_STRING@@";
 
-    private static String VENDOR_URL_BUG =
+    // This field is read by JavaLangAccess.
+    static String VENDOR_URL_BUG =
         "@@VENDOR_URL_BUG@@";
 
-    // This field is read by HotSpot
+    // This field is read by HotSpot and JavaLangAccess.
     @SuppressWarnings("unused")
-    private static String VENDOR_URL_VM_BUG =
+    static String VENDOR_URL_VM_BUG =
         "@@VENDOR_URL_VM_BUG@@";
 
     /**

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2020, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2019, 2022, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -25,14 +25,48 @@
 
 package jdk.tools.jlink.internal.plugins;
 
+import java.util.EnumSet;
+import java.util.Map;
+import java.util.Set;
+
 /**
  * Plugin to add VM command-line options, by storing them in a resource
- * that's read by the VM at startup
+ * that's read by the VM at startup. The plugin prepend options from
+ * the resource if it exists in the current Java runtime.
  */
 public final class AddOptionsPlugin extends AddResourcePlugin {
 
+    /**
+     * Value of the options resource in the current Java runtime.
+     */
+    private final String jrtValue;
+
     public AddOptionsPlugin() {
         super("add-options", "/java.base/jdk/internal/vm/options");
+        this.jrtValue = readResource();
     }
 
+    @Override
+    public Set<State> getState() {
+        if (jrtValue == null) {
+            return super.getState();
+        }
+        // Auto-enable if the current Java runtime has an options resource.
+        return EnumSet.of(State.AUTO_ENABLED, State.FUNCTIONAL);
+    }
+
+    @Override
+    public void configure(Map<String, String> config) {
+        var v = config.get(getName());
+        if (v == null && jrtValue == null)
+            throw new AssertionError();
+        if (jrtValue != null) {
+            if (v == null) {
+                v = jrtValue;
+            } else {
+                v = jrtValue + " " + v;
+            }
+        }
+        value = v;
+    }
 }

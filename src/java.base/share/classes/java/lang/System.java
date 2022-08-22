@@ -2631,6 +2631,16 @@ public final class System {
                                                       Continuation continuation) {
                 return StackWalker.newInstance(options, null, contScope, continuation);
             }
+
+            @Override
+            public String getVendorPropertyFieldValue(String name) {
+                switch (name) {
+                    case "VENDOR_VERSION": return VersionProps.VENDOR_VERSION;
+                    case "VENDOR_URL_BUG": return VersionProps.VENDOR_URL_BUG;
+                    case "VENDOR_URL_VM_BUG": return VersionProps.VENDOR_URL_VM_BUG;
+                    default: throw new InternalError("Unknown VersionProps field: " + name);
+                }
+            }            
         });
     }
 }
