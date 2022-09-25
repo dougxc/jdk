@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2020, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2019, 2022, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -25,7 +25,14 @@
 
 package jdk.tools.jlink.internal.plugins;
 
+import java.io.IOException;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileSystem;
+import java.nio.file.FileSystems;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Collections;
 import java.util.Map;
 import java.util.function.Function;
 
@@ -39,7 +46,7 @@ import jdk.tools.jlink.plugin.ResourcePoolEntry;
 abstract class AddResourcePlugin extends AbstractPlugin {
 
     private final String path;
-    private String value;
+    protected String value;
 
     protected AddResourcePlugin(String name, String p) {
         super(name);
@@ -61,6 +68,26 @@ abstract class AddResourcePlugin extends AbstractPlugin {
         return true;
     }
 
+    /**
+     * Gets the contents of the resource denoted by {@link #path} in the current
+     * Java runtime if it exists.
+     *
+     * @return the contents of the resource as a String or {@code null} if the
+     *         resource does not exist
+     */
+    protected String readResource() throws AssertionError {
+        try {
+            FileSystem fs = FileSystems.newFileSystem(URI.create("jrt:/"), Collections.emptyMap());
+            Path optionsPath = fs.getPath("/modules" + path);
+            if (Files.exists(optionsPath)) {
+                var optionsBytes = Files.readAllBytes(optionsPath);
+                return new String(optionsBytes, StandardCharsets.UTF_8);
+            }
+        } catch (IOException e) {
+            throw new AssertionError(e);
+        }
+        return null;
+    }
 
     @Override
     public void configure(Map<String, String> config) {

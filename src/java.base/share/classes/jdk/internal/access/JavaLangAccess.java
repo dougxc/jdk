@@ -537,4 +537,8 @@ public interface JavaLangAccess {
     StackWalker newStackWalkerInstance(Set<StackWalker.Option> options,
                                        ContinuationScope contScope,
                                        Continuation continuation);
+    /**
+     * Gets the value of the field named {@code name} in {@code java.lang.VersionProps}.
+     */
+    String getVendorPropertyFieldValue(String name);
 }
