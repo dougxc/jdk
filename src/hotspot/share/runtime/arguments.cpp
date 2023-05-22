@@ -2827,10 +2827,35 @@ jint Arguments::parse_each_vm_init_arg(const JavaVMInitArgs* args, bool* patch_m
         return JNI_ERR;
 #endif // INCLUDE_MANAGEMENT
 #if INCLUDE_JVMCI
+    } else if (match_option(option, "-XX:-UseGraalJIT")) {
+      FLAG_SET_CMDLINE(UseJVMCICompiler, false);
+    } else if (match_option(option, "-XX:+UseGraalJIT")) {
+      if (!EnableJVMCIProduct) {
+        bool save = UnlockExperimentalVMOptions;
+        bool ok = JVMCIGlobals::enable_jvmci_product_mode(origin);
+        UnlockExperimentalVMOptions = save;
+        if (!ok) {
+          jio_fprintf(defaultStream::error_stream(),
+            "Unable to enable JVMCI in product mode");
+          return JNI_ERR;
+        }
+      }
+
+      const char* jvmci_compiler = get_property("jvmci.Compiler");
+      if (jvmci_compiler != nullptr) {
+        if (strcmp(jvmci_compiler, "graal") != 0) {
+          jio_fprintf(defaultStream::error_stream(),
+            "Value of jvmci.Compiler incompatible with +UseGraalJIT: %s", jvmci_compiler);
+          return JNI_ERR;
+        }
+      } else if (!add_property("jvmci.Compiler=graal")) {
+          return JNI_ENOMEM;
+      }
+      FLAG_SET_CMDLINE(UseJVMCICompiler, true);
     } else if (match_option(option, "-XX:-EnableJVMCIProduct")) {
       if (EnableJVMCIProduct) {
         jio_fprintf(defaultStream::error_stream(),
-                  "-XX:-EnableJVMCIProduct cannot come after -XX:+EnableJVMCIProduct\n");
+                  "-XX:-EnableJVMCIProduct cannot come after -XX:+EnableJVMCIProduct or -XX:+UseGraalJIT\n");
         return JNI_EINVAL;
       }
     } else if (match_option(option, "-XX:+EnableJVMCIProduct")) {
