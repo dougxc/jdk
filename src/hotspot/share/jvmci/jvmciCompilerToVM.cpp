@@ -2725,6 +2725,7 @@ C2V_VMENTRY_0(jlong, translate, (JNIEnv* env, jobject, jobject obj_handle, jbool
   if (obj_handle == nullptr) {
     return 0L;
   }
+  JVMCICanCallJava ccj(thread, true);
   PEER_JVMCIENV_FROM_THREAD(THREAD, !JVMCIENV->is_hotspot());
   PEER_JVMCIENV->check_init(JVMCI_CHECK_0);
 
