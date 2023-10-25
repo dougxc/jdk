@@ -24,6 +24,9 @@
 #include <jni.h>
 
 JNIEXPORT jint JNICALL
-Java_JniVersion_getJniVersion(JNIEnv *env, jclass clz) {
+Java_JniVersion_getJniVersion(JNIEnv *env, jclass clz, int iterations) {
+  for (int i = 0; i < iterations; i++) {
+    (*env)->GetVersion(env);
+  }
   return (*env)->GetVersion(env);
 }
