@@ -141,8 +141,22 @@ jobs:
           # Get info for first associated pull request
           pr_url=$(gh api "${headers[@]}" ${commit}/pulls | jq -r '.[0].html_url')
 
-          # Get job URL
-          job_url=$(gh api "${headers[@]}" "/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs" | jq -r '.jobs | .[] | select(.name | endswith("test-libgraal")) | .html_url')
+          # Get job URL. Need to use pagination as there can be a lot of jobs.
+          # Initialize job URL to run URL in case a job URL is not found
+          job_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          page=1
+          while true; do
+            jobs=$(gh api "${headers[@]}" "/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs?per_page=100&page=${page}" | jq -r '.jobs[]')
+            if [[ "${jobs}" == "" ]]; then
+              break
+            fi            
+            url=$(gh api "${headers[@]}" "/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs?per_page=100&page=${page}" | jq -r '.jobs | .[] | select(.name | endswith("test-libgraal")) | .html_url')
+            if [[ "${url}" != "null" ]]; then
+              job_url="${url}"
+              break
+            fi
+            page=$((page + 1))
+          done
 
           # Get the failed steps
           failed_steps=$(echo "${STEPS_CONTEXT}" | jq -r 'with_entries(select(.value | .outcome == "failure")) | keys | join(", ")')
