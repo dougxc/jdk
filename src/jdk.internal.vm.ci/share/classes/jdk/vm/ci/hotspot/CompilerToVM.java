@@ -1516,10 +1516,12 @@ final class CompilerToVM {
     native void getOopMapAt(HotSpotResolvedJavaMethodImpl method, long methodPointer, int bci, long[] oopMap);
 
     /**
-     * If the current thread is a CompilerThread associated with a JVMCI compiler where
-     * newState != CompilerThread::_can_call_java, then _can_call_java is set to newState.
+     * If the current thread is a {@code CompilerThread} associated with a JVMCI compiler where
+     * {@code newState != CompilerThread::_can_call_java}, then {@code _can_call_java} is set
+     * to {@code newState}.
      *
-     * @returns false if no change was made, otherwise true
+     * @return the previous {@code _can_call_java} value if change was made,
+     * otherwise {@code newState}
      */
-    native boolean updateCompilerThreadCanCallJava(boolean newState);
+    native int updateCompilerThreadCanCallJava(int newState);
 }

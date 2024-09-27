@@ -401,8 +401,18 @@ C2V_VMENTRY_NULL(jobject, asResolvedJavaMethod, (JNIEnv* env, jobject, jobject e
   return JVMCIENV->get_jobject(result);
 }
 
-C2V_VMENTRY_0(jboolean, updateCompilerThreadCanCallJava, (JNIEnv* env, jobject, jboolean newState))
-  return CompilerThreadCanCallJava::update(THREAD, newState) != nullptr;
+C2V_VMENTRY_PREFIX(jint, updateCompilerThreadCanCallJava, (JNIEnv* env, jobject, jint newState))
+    TriBool new_state{};
+    if (newState != -1) {
+        new_state = static_cast<bool>(newState);
+    }
+    Pair<CompilerThread*,TriBool> p = CompilerThreadCanCallJava::update(thread, new_state, true);
+    TriBool result = p.first == nullptr ? new_state : p.second;
+    if (result.is_default()) {
+        return -1;
+    } else {
+        return static_cast<bool>(p.second);
+    }
 C2V_END
 
 
@@ -588,7 +598,7 @@ C2V_VMENTRY_0(jboolean, shouldInlineMethod,(JNIEnv* env, jobject, ARGUMENT_PAIR(
 C2V_END
 
 C2V_VMENTRY_NULL(jobject, lookupType, (JNIEnv* env, jobject, jstring jname, ARGUMENT_PAIR(accessing_klass), jint accessing_klass_loader, jboolean resolve))
-  CompilerThreadCanCallJava canCallJava(thread, resolve); // Resolution requires Java calls
+  CompilerThreadCanCallJava canCallJava(thread, resolve, true); // Resolution requires Java calls
   JVMCIObject name = JVMCIENV->wrap(jname);
   const char* str = JVMCIENV->as_utf8_string(name);
   TempNewSymbol class_name = SymbolTable::new_symbol(str);
@@ -2036,7 +2046,7 @@ C2V_VMENTRY(void, ensureInitialized, (JNIEnv* env, jobject, ARGUMENT_PAIR(klass)
 C2V_END
 
 C2V_VMENTRY(void, ensureLinked, (JNIEnv* env, jobject, ARGUMENT_PAIR(klass)))
-  CompilerThreadCanCallJava canCallJava(thread, true); // Linking requires Java calls
+  CompilerThreadCanCallJava canCallJava(thread, true, true); // Linking requires Java calls
   Klass* klass = UNPACK_PAIR(Klass, klass);
   if (klass == nullptr) {
     JVMCI_THROW(NullPointerException);
@@ -2802,7 +2812,7 @@ C2V_VMENTRY_0(jlong, translate, (JNIEnv* env, jobject, jobject obj_handle, jbool
     return 0L;
   }
   PEER_JVMCIENV_FROM_THREAD(THREAD, !JVMCIENV->is_hotspot());
-  CompilerThreadCanCallJava canCallJava(thread, PEER_JVMCIENV->is_hotspot());
+  CompilerThreadCanCallJava canCallJava(thread, PEER_JVMCIENV->is_hotspot(), true);
   PEER_JVMCIENV->check_init(JVMCI_CHECK_0);
 
   JVMCIEnv* thisEnv = JVMCIENV;
@@ -3025,21 +3035,21 @@ static jbyteArray get_encoded_annotation_data(InstanceKlass* holder, AnnotationA
 
 C2V_VMENTRY_NULL(jbyteArray, getEncodedClassAnnotationData, (JNIEnv* env, jobject, ARGUMENT_PAIR(klass),
                  jobject filter, jint filter_length, jlong filter_klass_pointers))
-  CompilerThreadCanCallJava canCallJava(thread, true); // Requires Java support
+  CompilerThreadCanCallJava canCallJava(thread, true, true); // Requires Java support
   InstanceKlass* holder = InstanceKlass::cast(UNPACK_PAIR(Klass, klass));
   return get_encoded_annotation_data(holder, holder->class_annotations(), true, filter_length, filter_klass_pointers, THREAD, JVMCIENV);
 C2V_END
 
 C2V_VMENTRY_NULL(jbyteArray, getEncodedExecutableAnnotationData, (JNIEnv* env, jobject, ARGUMENT_PAIR(method),
                  jobject filter, jint filter_length, jlong filter_klass_pointers))
-  CompilerThreadCanCallJava canCallJava(thread, true); // Requires Java support
+  CompilerThreadCanCallJava canCallJava(thread, true, true); // Requires Java support
   methodHandle method(THREAD, UNPACK_PAIR(Method, method));
   return get_encoded_annotation_data(method->method_holder(), method->annotations(), false, filter_length, filter_klass_pointers, THREAD, JVMCIENV);
 C2V_END
 
 C2V_VMENTRY_NULL(jbyteArray, getEncodedFieldAnnotationData, (JNIEnv* env, jobject, ARGUMENT_PAIR(klass), jint index,
                  jobject filter, jint filter_length, jlong filter_klass_pointers))
-  CompilerThreadCanCallJava canCallJava(thread, true); // Requires Java support
+  CompilerThreadCanCallJava canCallJava(thread, true, true); // Requires Java support
   InstanceKlass* holder = check_field(InstanceKlass::cast(UNPACK_PAIR(Klass, klass)), index, JVMCIENV);
   fieldDescriptor fd(holder, index);
   return get_encoded_annotation_data(holder, fd.annotations(), false, filter_length, filter_klass_pointers, THREAD, JVMCIENV);
@@ -3103,7 +3113,7 @@ C2V_VMENTRY(void, callSystemExit, (JNIEnv* env, jobject, jint status))
       vm_exit_during_initialization();
     }
   }
-  CompilerThreadCanCallJava canCallJava(thread, true);
+  CompilerThreadCanCallJava canCallJava(thread, true, true);
   JavaValue result(T_VOID);
   JavaCallArguments jargs(1);
   jargs.push_int(status);
@@ -3392,7 +3402,7 @@ JNINativeMethod CompilerToVM::methods[] = {
   {CC "notifyCompilerPhaseEvent",                     CC "(JIII)V",                                                                         FN_PTR(notifyCompilerPhaseEvent)},
   {CC "notifyCompilerInliningEvent",                  CC "(I" HS_METHOD2 HS_METHOD2 "ZLjava/lang/String;I)V",                               FN_PTR(notifyCompilerInliningEvent)},
   {CC "getOopMapAt",                                  CC "(" HS_METHOD2 "I[J)V",                                                            FN_PTR(getOopMapAt)},
-  {CC "updateCompilerThreadCanCallJava",              CC "(Z)Z",                                                                            FN_PTR(updateCompilerThreadCanCallJava)},
+  {CC "updateCompilerThreadCanCallJava",              CC "(I)I",                                                                            FN_PTR(updateCompilerThreadCanCallJava)},
 };
 
 int CompilerToVM::methods_count() {

@@ -24,6 +24,8 @@
 #ifndef SHARE_JVMCI_JVMCI_HPP
 #define SHARE_JVMCI_JVMCI_HPP
 
+#include <utilities/pair.hpp>
+#include <utilities/tribool.hpp>
 #include "compiler/compiler_globals.hpp"
 #include "compiler/compilerDefinitions.hpp"
 #include "utilities/exceptions.hpp"
@@ -60,14 +62,24 @@ typedef struct _jmetadata *jmetadata;
 class CompilerThreadCanCallJava : StackObj {
  private:
   CompilerThread* _current; // Only non-null if state of thread changed
+  TriBool _prev_can_call_java;
 public:
-  // If the current thread is a CompilerThread associated with
-  // a JVMCI compiler where CompilerThread::_can_call_java != new_state,
-  // then _can_call_java is set to `new_state`
-  // Returns nullptr if no change was made, otherwise the current CompilerThread
-  static CompilerThread* update(JavaThread* current, bool new_state);
+  // Updates the `_can_call_java` state for the current thread if it's a `CompilerThread`
+  // associated with a JVMCI compiler.
+  //
+  // Conditions for updating:
+  // - The current thread must be a `CompilerThread`.
+  // - The thread's `_can_call_java` field must not already match `new_state`.
+  // - Either the `force` flag must be `true`, or `_can_call_java` must be a default `TriBool` value.
+  // - The thread must be associated with a valid JVMCI compiler (`_compiler != nullptr` and `_compiler->is_jvmci()`).
+  //
+  // If the update is performed, `_can_call_java` is set to `new_state`, and the method returns a
+  // `Pair` containing the current `CompilerThread` and its previous `_can_call_java` value.
+  //
+  // If no update is performed, the method returns a `Pair` with `nullptr` and a default `TriBool` value.
+  static Pair<CompilerThread*,TriBool> update(JavaThread* current, TriBool new_state, bool force);
 
-  CompilerThreadCanCallJava(JavaThread* current, bool new_state);
+  CompilerThreadCanCallJava(JavaThread* current, bool new_state, bool force=false);
 
   // Resets CompilerThread::_can_call_java of the current thread if the
   // constructor changed it.

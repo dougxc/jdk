@@ -1372,7 +1372,7 @@ JVMCIObject JVMCIEnv::get_jvmci_type(const JVMCIKlassHandle& klass, JVMCI_TRAPS)
   JavaThread* THREAD = JVMCI::compilation_tick(JavaThread::current()); // For exception macros.
   jboolean exception = false;
   if (is_hotspot()) {
-    CompilerThreadCanCallJava ccj(THREAD, true);
+    CompilerThreadCanCallJava ccj(THREAD, true, true);
     JavaValue result(T_OBJECT);
     JavaCallArguments args;
     args.push_long(pointer);

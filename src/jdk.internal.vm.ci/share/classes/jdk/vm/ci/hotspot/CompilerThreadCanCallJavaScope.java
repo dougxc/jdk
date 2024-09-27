@@ -35,7 +35,7 @@ public class CompilerThreadCanCallJavaScope implements AutoCloseable {
     /**
      * Thread state used during the scope.
      */
-    private final boolean state;
+    private final int rawPrevState;
 
     /**
      * Non-null iff the thread state needs resetting in {@link #close()}.
@@ -55,10 +55,11 @@ public class CompilerThreadCanCallJavaScope implements AutoCloseable {
      * @param newState true/false to allow/disallow VM-to-Java calls within the scope
      */
     public CompilerThreadCanCallJavaScope(boolean newState) {
-        this.state = newState;
         this.thread = Thread.currentThread();
         CompilerToVM vm = HotSpotJVMCIRuntime.runtime().getCompilerToVM();
-        if (vm.updateCompilerThreadCanCallJava(newState)) {
+        int rawNewState = newState ? 1 : 0;
+        this.rawPrevState = vm.updateCompilerThreadCanCallJava(rawNewState);
+        if (rawPrevState != rawNewState) {
             this.vm = vm;
         } else {
             this.vm = null;
@@ -78,7 +79,7 @@ public class CompilerThreadCanCallJavaScope implements AutoCloseable {
         }
 
         if (vm != null) {
-            vm.updateCompilerThreadCanCallJava(!state);
+            vm.updateCompilerThreadCanCallJava(rawPrevState);
         }
     }
 }

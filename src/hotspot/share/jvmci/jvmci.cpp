@@ -54,29 +54,33 @@ volatile intx JVMCI::_fatal_log_init_thread = -1;
 volatile int JVMCI::_fatal_log_fd = -1;
 const char* JVMCI::_fatal_log_filename = nullptr;
 
-CompilerThread* CompilerThreadCanCallJava::update(JavaThread* current, bool new_state) {
+Pair<CompilerThread*,TriBool> CompilerThreadCanCallJava::update(JavaThread* current, const TriBool new_state, bool force) {
   if (current->is_Compiler_thread()) {
     CompilerThread* ct = CompilerThread::cast(current);
     if (ct->_can_call_java != new_state &&
+        (force || ct->_can_call_java.is_default()) &&
         ct->_compiler != nullptr &&
         ct->_compiler->is_jvmci())
     {
       // Only update the state if the ability of the
       // current thread to call Java actually changes
+      TriBool prev_state{ct->_can_call_java};
       ct->_can_call_java = new_state;
-      return ct;
+      return {ct, prev_state};
     }
   }
-  return nullptr;
+  return {nullptr, {}};
 }
 
-CompilerThreadCanCallJava::CompilerThreadCanCallJava(JavaThread* current, bool new_state) {
-  _current = CompilerThreadCanCallJava::update(current, new_state);
+CompilerThreadCanCallJava::CompilerThreadCanCallJava(JavaThread* current, bool new_state, bool force) {
+  Pair<CompilerThread*,TriBool> p  = CompilerThreadCanCallJava::update(current, new_state, force);
+  _current = p.first;
+  _prev_can_call_java = p.second;
 }
 
 CompilerThreadCanCallJava::~CompilerThreadCanCallJava() {
   if (_current != nullptr) {
-    _current->_can_call_java = !_current->_can_call_java;
+    _current->_can_call_java = _prev_can_call_java;
   }
 }
 
@@ -205,7 +209,7 @@ void JVMCI::ensure_box_caches_initialized(TRAPS) {
 
   // Class resolution and initialization below
   // requires calling into Java
-  CompilerThreadCanCallJava ccj(THREAD, true);
+  CompilerThreadCanCallJava ccj(THREAD, true, true);
 
   for (unsigned i = 0; i < sizeof(box_classes) / sizeof(Symbol*); i++) {
     Klass* k = SystemDictionary::resolve_or_fail(box_classes[i], true, CHECK);

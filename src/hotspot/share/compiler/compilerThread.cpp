@@ -56,7 +56,9 @@ CompilerThread::~CompilerThread() {
 
 void CompilerThread::set_compiler(AbstractCompiler* c) {
   // Only jvmci compiler threads can call Java
-  _can_call_java = c != nullptr && c->is_jvmci();
+  if (c != nullptr && c->is_jvmci()) {
+      _can_call_java = TriBool{};
+  }
   _compiler = c;
 }
 
