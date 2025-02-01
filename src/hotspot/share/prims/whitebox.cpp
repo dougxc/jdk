@@ -398,7 +398,7 @@ WB_END
 
 WB_ENTRY(jboolean, WB_IsGCSupportedByJVMCICompiler(JNIEnv* env, jobject o, jint name))
 #if INCLUDE_JVMCI
-  if (EnableJVMCI) {
+  if (JVMCI::is_jvmci_module_defined()) {
     // Enter the JVMCI env that will be used by the CompileBroker.
     JVMCIEnv jvmciEnv(thread, __FILE__, __LINE__);
     return jvmciEnv.init_error() == JNI_OK && jvmciEnv.runtime()->is_gc_supported(&jvmciEnv, (CollectedHeap::Name)name);
@@ -2172,14 +2172,6 @@ WB_ENTRY(jboolean, WB_isC2OrJVMCIIncluded(JNIEnv* env))
 #endif
 WB_END
 
-WB_ENTRY(jboolean, WB_IsJVMCISupportedByGC(JNIEnv* env))
-#if INCLUDE_JVMCI
-  return JVMCIGlobals::gc_supports_jvmci();
-#else
-  return false;
-#endif
-WB_END
-
 WB_ENTRY(jboolean, WB_CanWriteJavaHeapArchive(JNIEnv* env))
   return HeapShared::can_write();
 WB_END
@@ -2931,7 +2923,6 @@ static JNINativeMethod methods[] = {
   {CC"isDTraceIncluded",                  CC"()Z",    (void*)&WB_IsDTraceIncluded },
   {CC"hasLibgraal",                       CC"()Z",    (void*)&WB_HasLibgraal },
   {CC"isC2OrJVMCIIncluded",               CC"()Z",    (void*)&WB_isC2OrJVMCIIncluded },
-  {CC"isJVMCISupportedByGC",              CC"()Z",    (void*)&WB_IsJVMCISupportedByGC},
   {CC"canWriteJavaHeapArchive",           CC"()Z",    (void*)&WB_CanWriteJavaHeapArchive },
   {CC"cdsMemoryMappingFailed",            CC"()Z",    (void*)&WB_CDSMemoryMappingFailed },
 
