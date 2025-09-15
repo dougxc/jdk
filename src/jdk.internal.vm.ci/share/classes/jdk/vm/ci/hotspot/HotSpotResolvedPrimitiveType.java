@@ -33,7 +33,6 @@ import jdk.vm.ci.meta.ResolvedJavaRecordComponent;
 import jdk.vm.ci.meta.ResolvedJavaType;
 import jdk.vm.ci.meta.UnresolvedJavaType;
 
-import java.lang.annotation.Annotation;
 import java.lang.reflect.Modifier;
 import java.util.List;
 
@@ -239,21 +238,6 @@ public final class HotSpotResolvedPrimitiveType extends HotSpotResolvedJavaType 
     }
 
     @Override
-    public Annotation[] getAnnotations() {
-        return new Annotation[0];
-    }
-
-    @Override
-    public Annotation[] getDeclaredAnnotations() {
-        return new Annotation[0];
-    }
-
-    @Override
-    public <T extends Annotation> T getAnnotation(Class<T> annotationClass) {
-        return null;
-    }
-
-    @Override
     public ResolvedJavaType resolve(ResolvedJavaType accessingClass) {
         requireNonNull(accessingClass);
         return this;
@@ -339,10 +323,9 @@ public final class HotSpotResolvedPrimitiveType extends HotSpotResolvedJavaType 
 
     @Override
     public boolean equals(Object obj) {
-        if (!(obj instanceof HotSpotResolvedPrimitiveType)) {
+        if (!(obj instanceof HotSpotResolvedPrimitiveType that)) {
             return false;
         }
-        HotSpotResolvedPrimitiveType that = (HotSpotResolvedPrimitiveType) obj;
         return that.kind == kind;
     }
 

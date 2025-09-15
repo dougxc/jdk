@@ -794,7 +794,7 @@ public class TestResolvedJavaType extends TypeUniverse {
                         ResolvedJavaMethod m = metaAccess.lookupJavaMethod(decl);
                         if (m.isPublic()) {
                             ResolvedJavaMethod resolvedMethod = type.resolveMethod(m, context);
-                            if (isSignaturePolymorphic(m)) {
+                            if (isSignaturePolymorphic(decl)) {
                                 // Signature polymorphic methods must not be resolved
                                 assertNull(resolvedMethod);
                             } else {
@@ -820,7 +820,7 @@ public class TestResolvedJavaType extends TypeUniverse {
                     }
                     ResolvedJavaMethod decl = metaAccess.lookupJavaMethod(m);
                     ResolvedJavaMethod impl = type.resolveMethod(decl, declaringClass);
-                    ResolvedJavaMethod expected = isSignaturePolymorphic(decl) ? null : decl;
+                    ResolvedJavaMethod expected = isSignaturePolymorphic(m) ? null : decl;
                     assertEquals(m.toString(), expected, impl);
                 }
             }
@@ -848,7 +848,7 @@ public class TestResolvedJavaType extends TypeUniverse {
                         ResolvedJavaMethod m = metaAccess.lookupJavaMethod(decl);
                         if (m.isPublic()) {
                             ResolvedJavaMethod resolvedMethod = type.resolveConcreteMethod(m, context);
-                            if (isSignaturePolymorphic(m)) {
+                            if (isSignaturePolymorphic(decl)) {
                                 // Signature polymorphic methods must not be resolved
                                 assertNull(String.format("Got: %s", resolvedMethod), resolvedMethod);
                             } else {
@@ -1109,8 +1109,6 @@ public class TestResolvedJavaType extends TypeUniverse {
     private static ResolvedJavaMethod getClassInitializer(Class<?> c) {
         ResolvedJavaMethod clinit = metaAccess.lookupJavaType(c).getClassInitializer();
         if (clinit != null) {
-            assertEquals(0, clinit.getAnnotations().length);
-            assertEquals(0, clinit.getDeclaredAnnotations().length);
             assertNull(runtime.getMirror(clinit));
         }
         return clinit;
@@ -1126,24 +1124,6 @@ public class TestResolvedJavaType extends TypeUniverse {
         assertNull(getClassInitializer(void.class));
         for (Class<?> c : classes) {
             getClassInitializer(c);
-        }
-    }
-
-    @Test
-    public void getAnnotationsTest() {
-        for (Class<?> c : classes) {
-            ResolvedJavaType type = metaAccess.lookupJavaType(c);
-            assertArrayEquals(c.getAnnotations(), type.getAnnotations());
-        }
-    }
-
-    @Test
-    public void getAnnotationTest() {
-        for (Class<?> c : classes) {
-            ResolvedJavaType type = metaAccess.lookupJavaType(c);
-            for (Annotation a : c.getAnnotations()) {
-                assertEquals(a, type.getAnnotation(a.annotationType()));
-            }
         }
     }
 
@@ -1316,7 +1296,7 @@ public class TestResolvedJavaType extends TypeUniverse {
         }
     }
 
-    private static boolean isSignaturePolymorphic(ResolvedJavaMethod method) {
+    private static boolean isSignaturePolymorphic(Method method) {
         return method.getAnnotation(SIGNATURE_POLYMORPHIC_CLASS) != null;
     }
 }

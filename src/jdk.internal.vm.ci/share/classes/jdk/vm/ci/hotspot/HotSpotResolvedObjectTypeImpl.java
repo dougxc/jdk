@@ -40,7 +40,6 @@ import jdk.vm.ci.meta.UnresolvedJavaField;
 import jdk.vm.ci.meta.UnresolvedJavaType;
 import jdk.vm.ci.meta.annotation.AnnotationsInfo;
 
-import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.nio.ByteOrder;
@@ -922,32 +921,6 @@ final class HotSpotResolvedObjectTypeImpl extends HotSpotResolvedJavaType implem
             return classAnnotations != 0;
         }
         return false;
-    }
-
-    private static final Annotation[] NO_ANNOTATIONS = {};
-
-    @Override
-    public Annotation[] getAnnotations() {
-        if (!mayHaveAnnotations(true)) {
-            return NO_ANNOTATIONS;
-        }
-        return runtime().reflection.getAnnotations(this);
-    }
-
-    @Override
-    public Annotation[] getDeclaredAnnotations() {
-        if (!mayHaveAnnotations(false)) {
-            return NO_ANNOTATIONS;
-        }
-        return runtime().reflection.getDeclaredAnnotations(this);
-    }
-
-    @Override
-    public <T extends Annotation> T getAnnotation(Class<T> annotationClass) {
-        if (!mayHaveAnnotations(true)) {
-            return null;
-        }
-        return runtime().reflection.getAnnotation(this, annotationClass);
     }
 
     /**

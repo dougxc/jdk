@@ -33,7 +33,7 @@ import java.util.List;
  * thereof. Types, like fields and methods, are resolved through {@link ConstantPool constant pools}
  * .
  */
-public interface ResolvedJavaType extends JavaType, ModifiersProvider, AnnotatedElement, Annotated {
+public interface ResolvedJavaType extends JavaType, ModifiersProvider, Annotated {
     /**
      * Checks whether this type has a finalizer method.
      *

@@ -26,8 +26,8 @@ import java.lang.reflect.AnnotatedElement;
 
 /**
  * Represents a program element such as a method, constructor, field or class for which annotations
- * may be directly present. This API is analogous to {@link java.lang.reflect.AnnotatedElement}
- * except that it only supports {@linkplain AnnotatedElement#getDeclaredAnnotations() declared annotations}.
+ * may be directly present. Unlike {@link java.lang.reflect.AnnotatedElement}, this API only exposes
+ * class file level info for annotations.
  */
 public interface Annotated {
 

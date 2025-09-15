@@ -22,7 +22,6 @@
  */
 package jdk.vm.ci.hotspot;
 
-import java.lang.annotation.Annotation;
 import java.lang.reflect.Type;
 
 import jdk.vm.ci.meta.JavaConstant;
@@ -38,12 +37,6 @@ abstract class HotSpotJVMCIReflection {
 
     abstract boolean isAssignableFrom(HotSpotResolvedObjectTypeImpl holder, HotSpotResolvedObjectTypeImpl otherType);
 
-    abstract Annotation[] getAnnotations(HotSpotResolvedObjectTypeImpl holder);
-
-    abstract Annotation[] getDeclaredAnnotations(HotSpotResolvedObjectTypeImpl holder);
-
-    abstract <T extends Annotation> T getAnnotation(HotSpotResolvedObjectTypeImpl holder, Class<T> annotationClass);
-
     abstract boolean isLocalClass(HotSpotResolvedObjectTypeImpl holder);
 
     abstract boolean isMemberClass(HotSpotResolvedObjectTypeImpl holder);
@@ -54,19 +47,7 @@ abstract class HotSpotJVMCIReflection {
 
     abstract ResolvedJavaMethod.Parameter[] getParameters(HotSpotResolvedJavaMethodImpl javaMethod);
 
-    abstract Annotation[][] getParameterAnnotations(HotSpotResolvedJavaMethodImpl javaMethod);
-
     abstract Type[] getGenericParameterTypes(HotSpotResolvedJavaMethodImpl javaMethod);
-
-    abstract Annotation[] getFieldAnnotations(HotSpotResolvedJavaFieldImpl javaMethod);
-
-    abstract Annotation[] getMethodAnnotations(HotSpotResolvedJavaMethodImpl javaField);
-
-    abstract Annotation[] getMethodDeclaredAnnotations(HotSpotResolvedJavaMethodImpl javaMethod);
-
-    abstract Annotation[] getFieldDeclaredAnnotations(HotSpotResolvedJavaFieldImpl javaMethod);
-
-    abstract <T extends Annotation> T getMethodAnnotation(HotSpotResolvedJavaMethodImpl javaMethod, Class<T> annotationClass);
 
     abstract HotSpotResolvedObjectTypeImpl getType(HotSpotObjectConstantImpl object);
 
@@ -92,8 +73,6 @@ abstract class HotSpotJVMCIReflection {
     abstract JavaConstant forObject(Object value);
 
     abstract JavaConstant boxPrimitive(JavaConstant source);
-
-    abstract <T extends Annotation> T getFieldAnnotation(HotSpotResolvedJavaFieldImpl javaField, Class<T> annotationClass);
 
     /**
      * Resolves {@code objectHandle} to a raw object if possible.

@@ -40,7 +40,6 @@ import jdk.vm.ci.meta.SpeculationLog;
 import jdk.vm.ci.meta.TriState;
 import jdk.vm.ci.meta.annotation.AnnotationsInfo;
 
-import java.lang.annotation.Annotation;
 import java.lang.reflect.Executable;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Type;
@@ -148,8 +147,7 @@ final class HotSpotResolvedJavaMethodImpl extends HotSpotMethod implements HotSp
         if (this == obj) {
             return true;
         }
-        if (obj instanceof HotSpotResolvedJavaMethodImpl) {
-            HotSpotResolvedJavaMethodImpl that = (HotSpotResolvedJavaMethodImpl) obj;
+        if (obj instanceof HotSpotResolvedJavaMethodImpl that) {
             return that.getMethodPointer() == getMethodPointer();
         }
         return false;
@@ -273,8 +271,7 @@ final class HotSpotResolvedJavaMethodImpl extends HotSpotMethod implements HotSp
                 catchType = constantPool.lookupType(catchTypeIndex, opcode);
 
                 // Check for Throwable which catches everything.
-                if (catchType instanceof HotSpotResolvedObjectTypeImpl) {
-                    HotSpotResolvedObjectTypeImpl resolvedType = (HotSpotResolvedObjectTypeImpl) catchType;
+                if (catchType instanceof HotSpotResolvedObjectTypeImpl resolvedType) {
                     if (resolvedType.equals(runtime().getJavaLangThrowable())) {
                         catchTypeIndex = 0;
                         catchType = null;
@@ -508,38 +505,6 @@ final class HotSpotResolvedJavaMethodImpl extends HotSpotMethod implements HotSp
         return runtime().reflection.getParameters(this);
     }
 
-    @Override
-    public Annotation[][] getParameterAnnotations() {
-        if (!hasAnnotations(HotSpotVMConfig.config().constMethodHasParameterAnnotations)) {
-            return new Annotation[signature.getParameterCount(false)][0];
-        }
-        return runtime().reflection.getParameterAnnotations(this);
-    }
-
-    @Override
-    public Annotation[] getAnnotations() {
-        if (!hasAnnotations(config().constMethodHasMethodAnnotations)) {
-            return new Annotation[0];
-        }
-        return runtime().reflection.getMethodAnnotations(this);
-    }
-
-    @Override
-    public Annotation[] getDeclaredAnnotations() {
-        if (!hasAnnotations(config().constMethodHasMethodAnnotations)) {
-            return new Annotation[0];
-        }
-        return runtime().reflection.getMethodDeclaredAnnotations(this);
-    }
-
-    @Override
-    public <T extends Annotation> T getAnnotation(Class<T> annotationClass) {
-        if (!hasAnnotations(config().constMethodHasMethodAnnotations)) {
-            return null;
-        }
-        return runtime().reflection.getMethodAnnotation(this, annotationClass);
-    }
-
     /**
      * Returns whether this method has annotations in the category specified by {@code category}.
      *
@@ -690,8 +655,7 @@ final class HotSpotResolvedJavaMethodImpl extends HotSpotMethod implements HotSp
 
     @Override
     public boolean isInVirtualMethodTable(ResolvedJavaType resolved) {
-        if (resolved instanceof HotSpotResolvedObjectTypeImpl) {
-            HotSpotResolvedObjectTypeImpl hotspotResolved = (HotSpotResolvedObjectTypeImpl) resolved;
+        if (resolved instanceof HotSpotResolvedObjectTypeImpl hotspotResolved) {
             int vtableIndex = getVtableIndex(hotspotResolved);
             return vtableIndex >= 0 && vtableIndex < hotspotResolved.getVtableLength();
         }

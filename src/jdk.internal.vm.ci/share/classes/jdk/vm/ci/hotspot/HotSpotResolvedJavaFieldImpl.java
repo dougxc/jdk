@@ -28,11 +28,8 @@ import jdk.vm.ci.meta.ResolvedJavaType;
 import jdk.vm.ci.meta.UnresolvedJavaType;
 import jdk.vm.ci.meta.annotation.AnnotationsInfo;
 
-import java.lang.annotation.Annotation;
-
 import static jdk.internal.misc.Unsafe.ADDRESS_SIZE;
 import static jdk.vm.ci.hotspot.CompilerToVM.compilerToVM;
-import static jdk.vm.ci.hotspot.HotSpotJVMCIRuntime.runtime;
 import static jdk.vm.ci.hotspot.HotSpotVMConfig.config;
 import static jdk.vm.ci.hotspot.UnsafeAccess.UNSAFE;
 
@@ -82,8 +79,8 @@ class HotSpotResolvedJavaFieldImpl implements HotSpotResolvedJavaField {
         if (obj instanceof HotSpotResolvedJavaFieldImpl that) {
             if (that.offset != this.offset || that.isStatic() != this.isStatic()) {
                 return false;
-            } else if (this.holder.equals(that.holder)) {
-                return true;
+            } else {
+                return this.holder.equals(that.holder);
             }
         }
         return false;
@@ -155,7 +152,7 @@ class HotSpotResolvedJavaFieldImpl implements HotSpotResolvedJavaField {
     }
 
     /**
-     * Gets the value of this field's index (i.e. {@code fieldDescriptor::index()} in the encoded
+     * Gets the value of this field's index (i.e. {@code fieldDescriptor::index()}) in the encoded
      * fields of the declaring class.
      */
     int getIndex() {
@@ -201,30 +198,6 @@ class HotSpotResolvedJavaFieldImpl implements HotSpotResolvedJavaField {
             }
         }
         return false;
-    }
-
-    @Override
-    public Annotation[] getAnnotations() {
-        if (!hasAnnotations(false)) {
-            return new Annotation[0];
-        }
-        return runtime().reflection.getFieldAnnotations(this);
-    }
-
-    @Override
-    public Annotation[] getDeclaredAnnotations() {
-        if (!hasAnnotations(false)) {
-            return new Annotation[0];
-        }
-        return runtime().reflection.getFieldDeclaredAnnotations(this);
-    }
-
-    @Override
-    public <T extends Annotation> T getAnnotation(Class<T> annotationClass) {
-        if (!hasAnnotations(false)) {
-            return null;
-        }
-        return runtime().reflection.getFieldAnnotation(this, annotationClass);
     }
 
     @Override
